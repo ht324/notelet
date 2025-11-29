@@ -921,6 +921,79 @@
             });
         };
 
+        const formatTimestamp = (pattern) => {
+            const now = new Date();
+            const pad2 = (n) => String(n).padStart(2, '0');
+            const hours24 = now.getHours();
+            const ampm = getLocaleDayPeriod(now);
+            const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
+            const parts = {
+                yyyy: now.getFullYear(),
+                MM: pad2(now.getMonth() + 1),
+                dd: pad2(now.getDate()),
+                hh: pad2(hours12),
+                HH: pad2(hours24),
+                mm: pad2(now.getMinutes()),
+                a: ampm
+            };
+            return pattern.replace(/ahh|yyyy|MM|dd|hh|HH|mm|a/g, (token) => {
+                if (token === 'ahh') return `${parts.a}${parts.hh}`;
+                return parts[token] ?? token;
+            });
+        };
+
+        const insertTimestamp = (editorInstance, pattern) => {
+            const text = formatTimestamp(pattern);
+            editorInstance.insert(text);
+        };
+
+        const getLocaleDayPeriod = (date) => {
+            try {
+                const locale = navigator.language || 'en';
+                const formatter = new Intl.DateTimeFormat(locale, { hour: 'numeric', hour12: true });
+                const parts = formatter.formatToParts(date || new Date());
+                const day = parts.find(p => p.type === 'dayPeriod');
+                if (day && day.value) return day.value;
+            } catch (_) {}
+            return date && date.getHours() < 12 ? 'AM' : 'PM';
+        };
+
+        const getLocalePatterns = () => {
+            const locale = (navigator.language || 'en').toLowerCase();
+            if (locale.startsWith('zh') || locale.startsWith('ja')) {
+                return {
+                    full: 'yyyy年MM月dd日 ahh:mm',
+                    dateZh: 'yyyy年MM月dd日',
+                    dateSlash: 'yyyy/MM/dd',
+                    time: 'ahh:mm'
+                };
+            }
+            return {
+                full: 'yyyy/MM/dd hh:mm a',
+                dateZh: 'yyyy/MM/dd',
+                dateSlash: 'yyyy/MM/dd',
+                time: 'hh:mm a'
+            };
+        };
+
+        const localePatterns = getLocalePatterns();
+
+        const registerTimeCommands = (editorInstance) => {
+            const commands = [
+                { name: 'insertDateTimeZh', bindKey: { win: 'Ctrl-Shift-7', mac: 'Command-Shift-7' }, pattern: localePatterns.full },
+                { name: 'insertDateZh', bindKey: { win: 'Ctrl-Shift-8', mac: 'Command-Shift-8' }, pattern: localePatterns.dateZh },
+                { name: 'insertDateSlash', bindKey: { win: 'Ctrl-Shift-9', mac: 'Command-Shift-9' }, pattern: localePatterns.dateSlash },
+                { name: 'insertTimeZh', bindKey: { win: 'Ctrl-Shift-0', mac: 'Command-Shift-0' }, pattern: localePatterns.time }
+            ];
+            commands.forEach((cmd) => {
+                editorInstance.commands.addCommand({
+                    name: cmd.name,
+                    bindKey: cmd.bindKey,
+                    exec: (ed) => insertTimestamp(ed, cmd.pattern)
+                });
+            });
+        };
+
         const attachEditorEvents = (editorInstance) => {
             editorInstance.selection.on('changeCursor', updateStatus);
             editorInstance.session.on('change', () => {
@@ -953,6 +1026,7 @@
                 }
             });
             registerSaveCommand(editorInstance);
+            registerTimeCommands(editorInstance);
         };
 
         const createPane = () => {
@@ -1277,7 +1351,7 @@
             historyOverlay.style.display = 'none';
         });
 
-        window._txt = Object.freeze({
+        window._notelet = Object.freeze({
             getEditors: () => editors.slice(),
             getActiveEditor: () => activeEditor,
             getActiveIndex: () => editors.indexOf(activeEditor),
