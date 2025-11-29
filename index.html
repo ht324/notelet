@@ -318,11 +318,6 @@
             background: #3a3a3a;
         }
 
-        .icon-theme-auto {
-            mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M4.22 4.22l2.12 2.12"/><path d="M17.66 17.66l2.12 2.12"/><path d="M4.22 19.78l2.12-2.12"/><path d="M17.66 6.34l2.12-2.12"/><path d="M12 8a4 4 0 1 0 4 4h-4z"/></svg>');
-            -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3"/><path d="M12 18v3"/><path d="M3 12h3"/><path d="M18 12h3"/><path d="M4.22 4.22l2.12 2.12"/><path d="M17.66 17.66l2.12 2.12"/><path d="M4.22 19.78l2.12-2.12"/><path d="M17.66 6.34l2.12-2.12"/><path d="M12 8a4 4 0 1 0 4 4h-4z"/></svg>');
-        }
-
         .icon-theme-light {
             mask-image: url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"5\"/><path d=\"M12 1v2\"/><path d=\"M12 21v2\"/><path d=\"M4.22 4.22l1.42 1.42\"/><path d=\"M18.36 18.36l1.42 1.42\"/><path d=\"M1 12h2\"/><path d=\"M21 12h2\"/><path d=\"M4.22 19.78l1.42-1.42\"/><path d=\"M18.36 5.64l1.42-1.42\"/></svg>');
             -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"white\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"12\" cy=\"12\" r=\"5\"/><path d=\"M12 1v2\"/><path d=\"M12 21v2\"/><path d=\"M4.22 4.22l1.42 1.42\"/><path d=\"M18.36 18.36l1.42 1.42\"/><path d=\"M1 12h2\"/><path d=\"M21 12h2\"/><path d=\"M4.22 19.78l1.42-1.42\"/><path d=\"M18.36 5.64l1.42-1.42\"/></svg>');
@@ -855,10 +850,10 @@
             if (!themeToggle) return;
             const icon = themeToggle.querySelector('.icon');
             const iconClass = {
-                auto: 'icon-theme-auto',
+                auto: resolvedTheme === 'light' ? 'icon-theme-light' : 'icon-theme-dark',
                 dark: 'icon-theme-dark',
                 light: 'icon-theme-light'
-            }[themePreference] || 'icon-theme-auto';
+            }[themePreference] || 'icon-theme-dark';
             if (icon) {
                 icon.className = `icon ${iconClass}`;
             }
@@ -900,11 +895,13 @@
 
         applyTheme(themePreference, true);
 
+        const isSystemDark = () => systemDarkQuery ? systemDarkQuery.matches : false;
+
         const nextTheme = (pref) => {
-            const order = ['auto', 'dark', 'light'];
-            const idx = order.indexOf(pref);
-            const nextIdx = idx === -1 ? 0 : (idx + 1) % order.length;
-            return order[nextIdx];
+            if (pref === 'auto') {
+                return isSystemDark() ? 'light' : 'dark';
+            }
+            return 'auto';
         };
 
         const openDb = () => new Promise((resolve, reject) => {
