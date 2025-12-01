@@ -598,6 +598,36 @@
             opacity: 0.9;
         }
 
+        #selection-menu {
+            position: fixed;
+            display: none;
+            background: rgba(28, 28, 28, 0.96);
+            color: #f0f0f0;
+            border: 1px solid #2f2f2f;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+            padding: 6px;
+            z-index: 1300;
+            backdrop-filter: blur(6px);
+            min-width: 160px;
+        }
+
+        #selection-menu button {
+            width: 100%;
+            background: transparent;
+            border: none;
+            color: inherit;
+            padding: 8px 10px;
+            text-align: left;
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        #selection-menu button:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
         :root[data-theme="light"] body {
             background: #f5f5f7;
             color: #111;
@@ -741,6 +771,17 @@
             border-color: #2f55c6;
             color: #fff;
         }
+
+        :root[data-theme="light"] #selection-menu {
+            background: rgba(255, 255, 255, 0.98);
+            color: #222;
+            border-color: #d0d0d0;
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        }
+
+        :root[data-theme="light"] #selection-menu button:hover {
+            background: rgba(0, 0, 0, 0.05);
+        }
     </style>
 </head>
 
@@ -797,6 +838,10 @@
         </div>
     </div>
     <div id="toast"></div>
+    <div id="selection-menu">
+        <button type="button" data-action="toggle-case">轉換大小寫</button>
+        <button type="button" data-action="decode-uri">Decode URI</button>
+    </div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.43.3/ace.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsonlint/1.6.0/jsonlint.min.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify.min.js" type="text/javascript" charset="utf-8"></script>
@@ -828,9 +873,11 @@
         const historyClose = document.getElementById('history-close');
         const historyTitleCount = document.getElementById('history-title-count');
         const toast = document.getElementById('toast');
+        const selectionMenu = document.getElementById('selection-menu');
         let activeEditor = null;
         let currentMode = modeSelect.value;
         let editors = [];
+        const Range = ace.require('ace/range').Range;
 
         const isMobile = () => window.innerWidth <= 768;
 
@@ -1071,6 +1118,140 @@
             const firstLine = (activeEditor.getValue() || '').split(/\r?\n/)[0].trim();
             const display = firstLine.slice(0, 20);
             document.title = display ? `${display} - Notelet` : 'Notelet';
+        };
+
+        let selectionHoverTimer = null;
+        let selectionTouchTimer = null;
+        let lastPointer = { x: 0, y: 0 };
+        let selectionHideTimer = null;
+
+        const hideSelectionMenu = () => {
+            if (selectionMenu) selectionMenu.style.display = 'none';
+            if (selectionHoverTimer) {
+                clearTimeout(selectionHoverTimer);
+                selectionHoverTimer = null;
+            }
+            if (selectionHideTimer) {
+                clearTimeout(selectionHideTimer);
+                selectionHideTimer = null;
+            }
+        };
+
+        const getSelectionBounds = (ed) => {
+            if (!ed) return null;
+            const range = ed.getSelectionRange();
+            if (range.isEmpty()) return null;
+            const start = ed.renderer.textToScreenCoordinates(range.start.row, range.start.column);
+            const end = ed.renderer.textToScreenCoordinates(range.end.row, range.end.column);
+            const lineHeight = ed.renderer.lineHeight || 16;
+            const left = Math.min(start.pageX, end.pageX);
+            const right = Math.max(start.pageX, end.pageX);
+            const top = Math.min(start.pageY, end.pageY);
+            const bottom = Math.max(start.pageY, end.pageY) + lineHeight;
+            return { left, right, top, bottom };
+        };
+
+        const positionSelectionMenu = (pageX, pageY) => {
+            if (!selectionMenu) return;
+            selectionMenu.style.display = 'block';
+            selectionMenu.style.left = `${pageX}px`;
+            selectionMenu.style.top = `${pageY}px`;
+            const rect = selectionMenu.getBoundingClientRect();
+            const clientX = pageX - window.scrollX;
+            const clientY = pageY - window.scrollY;
+            const clampedLeft = Math.max(8, Math.min(window.innerWidth - rect.width - 8, clientX + 8));
+            const clampedTop = Math.max(8, Math.min(window.innerHeight - rect.height - 8, clientY + 8));
+            selectionMenu.style.left = `${clampedLeft}px`;
+            selectionMenu.style.top = `${clampedTop}px`;
+        };
+
+        const isPointerInSelection = (pageX, pageY) => {
+            const bounds = getSelectionBounds(activeEditor);
+            if (!bounds) return false;
+            return pageX >= bounds.left && pageX <= bounds.right && pageY >= bounds.top && pageY <= bounds.bottom;
+        };
+
+        const isPointerOnMenu = (pageX, pageY) => {
+            if (!selectionMenu || selectionMenu.style.display === 'none') return false;
+            const rect = selectionMenu.getBoundingClientRect();
+            const x = pageX - window.scrollX;
+            const y = pageY - window.scrollY;
+            return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+        };
+
+        const scheduleSelectionMenu = (pageX, pageY, delay = 1000) => {
+            if (!selectionMenu || !activeEditor) return;
+            const range = activeEditor.getSelectionRange();
+            if (range.isEmpty()) return;
+            if (!isPointerInSelection(pageX, pageY) && !isPointerOnMenu(pageX, pageY)) {
+                if (selectionHideTimer) clearTimeout(selectionHideTimer);
+                selectionHideTimer = setTimeout(() => hideSelectionMenu(), 200);
+                return;
+            }
+            if (!updateSelectionMenuActions()) {
+                hideSelectionMenu();
+                return;
+            }
+            if (selectionHideTimer) {
+                clearTimeout(selectionHideTimer);
+                selectionHideTimer = null;
+            }
+            lastPointer = { x: pageX, y: pageY };
+            if (selectionHoverTimer) clearTimeout(selectionHoverTimer);
+            selectionHoverTimer = setTimeout(() => {
+                positionSelectionMenu(lastPointer.x, lastPointer.y);
+            }, delay);
+        };
+
+        const clearSelectionTouchTimer = () => {
+            if (selectionTouchTimer) {
+                clearTimeout(selectionTouchTimer);
+                selectionTouchTimer = null;
+            }
+        };
+
+        const handleSelectionAction = (action) => {
+            if (!activeEditor) return;
+            const sel = activeEditor.getSelectionRange();
+            if (sel.isEmpty()) return;
+            const text = activeEditor.session.getTextRange(sel);
+            if (!text) return;
+            let next = text;
+            if (action === 'toggle-case') {
+                next = text === text.toUpperCase() ? text.toLowerCase() : text.toUpperCase();
+            } else if (action === 'decode-uri') {
+                try {
+                    next = decodeURIComponent(text);
+                } catch (e) {
+                    showToast('Decode URI 失敗');
+                    return;
+                }
+            } else {
+                return;
+            }
+            const start = sel.start;
+            activeEditor.session.replace(sel, next);
+            const lines = next.split('\n');
+            const endRow = start.row + lines.length - 1;
+            const endCol = lines.length === 1 ? start.column + lines[0].length : lines[lines.length - 1].length;
+            activeEditor.selection.setSelectionRange(new Range(start.row, start.column, endRow, endCol));
+            hideSelectionMenu();
+        };
+
+        const updateSelectionMenuActions = () => {
+            if (!selectionMenu || !activeEditor) return false;
+            const range = activeEditor.getSelectionRange();
+            if (range.isEmpty()) return false;
+            const text = activeEditor.session.getTextRange(range) || '';
+            const hasLatin = /[A-Za-z]/.test(text);
+            const toggleBtn = selectionMenu.querySelector('[data-action="toggle-case"]');
+            if (toggleBtn) {
+                toggleBtn.style.display = hasLatin ? 'block' : 'none';
+            }
+            const buttons = Array.from(selectionMenu.querySelectorAll('button'));
+            const hasVisible = buttons.some(btn => btn.style.display !== 'none');
+            if (!hasVisible) hideSelectionMenu();
+            return hasVisible;
         };
 
         const updateCloseButtons = () => {
@@ -1324,6 +1505,9 @@
 
         const attachEditorEvents = (editorInstance) => {
             editorInstance.selection.on('changeCursor', updateStatus);
+            editorInstance.selection.on('changeSelection', () => {
+                hideSelectionMenu();
+            });
             editorInstance.session.on('change', () => {
                 if (editorInstance.__suppressPersist) {
                     editorInstance.__suppressPersist = false;
@@ -1357,6 +1541,39 @@
             });
             registerSaveCommand(editorInstance);
             registerTimeCommands(editorInstance);
+            const containerEl = editorInstance.renderer.container;
+            if (containerEl) {
+                containerEl.addEventListener('mousemove', (e) => {
+                    if (activeEditor !== editorInstance) return;
+                    const pageX = e.clientX + window.scrollX;
+                    const pageY = e.clientY + window.scrollY;
+                    scheduleSelectionMenu(pageX, pageY, 1000);
+                });
+                containerEl.addEventListener('mouseleave', (e) => {
+                    if (selectionMenu && selectionMenu.contains(e.relatedTarget)) return;
+                    selectionHideTimer = setTimeout(() => hideSelectionMenu(), 200);
+                });
+                containerEl.addEventListener('touchstart', (e) => {
+                    if (activeEditor !== editorInstance) return;
+                    const touch = e.touches && e.touches[0];
+                    if (!touch) return;
+                    const range = editorInstance.getSelectionRange();
+                    if (range.isEmpty()) return;
+                    if (!updateSelectionMenuActions()) return;
+                    clearSelectionTouchTimer();
+                    const pageX = touch.clientX + window.scrollX;
+                    const pageY = touch.clientY + window.scrollY;
+                    selectionTouchTimer = setTimeout(() => {
+                        positionSelectionMenu(pageX, pageY);
+                    }, 600);
+                }, { passive: true });
+                containerEl.addEventListener('touchend', () => {
+                    clearSelectionTouchTimer();
+                });
+                containerEl.addEventListener('touchcancel', () => {
+                    clearSelectionTouchTimer();
+                });
+            }
         };
 
         const createPane = () => {
@@ -1482,6 +1699,24 @@
         if (themeToggle) {
             themeToggle.addEventListener('click', () => {
                 applyTheme(nextTheme(themePreference));
+            });
+        }
+
+        if (selectionMenu) {
+            selectionMenu.addEventListener('click', (e) => {
+                const btn = e.target.closest('button[data-action]');
+                if (!btn) return;
+                const action = btn.getAttribute('data-action');
+                handleSelectionAction(action);
+            });
+            selectionMenu.addEventListener('mouseenter', () => {
+                if (selectionHideTimer) {
+                    clearTimeout(selectionHideTimer);
+                    selectionHideTimer = null;
+                }
+            });
+            selectionMenu.addEventListener('mouseleave', () => {
+                selectionHideTimer = setTimeout(() => hideSelectionMenu(), 200);
             });
         }
 
