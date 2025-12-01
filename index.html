@@ -1166,15 +1166,34 @@
             formatCompact.style.display = simplifyMode(modeId) === 'json' ? 'inline-flex' : 'none';
         };
 
+        const downloadMetaFromMode = (modeId) => {
+            const key = (modeId || '').split('/').pop() || 'txt';
+            switch (key) {
+                case 'json':
+                    return { ext: 'json', mime: 'application/json' };
+                case 'xml':
+                    return { ext: 'xml', mime: 'application/xml' };
+                case 'javascript':
+                    return { ext: 'js', mime: 'application/javascript' };
+                case 'css':
+                    return { ext: 'css', mime: 'text/css' };
+                case 'markdown':
+                    return { ext: 'md', mime: 'text/markdown' };
+                default:
+                    return { ext: 'txt', mime: 'text/plain' };
+            }
+        };
+
         const registerSaveCommand = (editorInstance) => {
             editorInstance.commands.addCommand({
                 name: 'saveToFile',
                 bindKey: { win: 'Ctrl-S', mac: 'Command-S' },
                 exec: function (ed) {
                     const content = ed.getValue();
-                    const downloadName = `${hashString(content)}.txt`;
+                    const { ext, mime } = downloadMetaFromMode(ed.session.$modeId);
+                    const downloadName = `${hashString(content)}.${ext}`;
                     const url = window.URL.createObjectURL(new Blob([ed.getValue()], {
-                        type: 'text/plain; charset=UTF-8'
+                        type: `${mime}; charset=UTF-8`
                     }));
                     let a = document.createElement('a');
                     a.href = url;
