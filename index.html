@@ -1124,6 +1124,8 @@
         let selectionTouchTimer = null;
         let lastPointer = { x: 0, y: 0 };
         let selectionHideTimer = null;
+        const SELECTION_CHECK_INTERVAL = 80;
+        let lastSelectionCheck = 0;
 
         const hideSelectionMenu = () => {
             if (selectionMenu) selectionMenu.style.display = 'none';
@@ -1141,13 +1143,15 @@
             if (!ed) return null;
             const range = ed.getSelectionRange();
             if (range.isEmpty()) return null;
-            const start = ed.renderer.textToScreenCoordinates(range.start.row, range.start.column);
-            const end = ed.renderer.textToScreenCoordinates(range.end.row, range.end.column);
-            const lineHeight = ed.renderer.lineHeight || 16;
-            const left = Math.min(start.pageX, end.pageX);
-            const right = Math.max(start.pageX, end.pageX);
+            const renderer = ed.renderer;
+            const start = renderer.textToScreenCoordinates(range.start.row, range.start.column);
+            const end = renderer.textToScreenCoordinates(range.end.row, range.end.column);
+            const lineHeight = renderer.lineHeight || 16;
             const top = Math.min(start.pageY, end.pageY);
             const bottom = Math.max(start.pageY, end.pageY) + lineHeight;
+            const rect = renderer.container.getBoundingClientRect();
+            const left = rect.left + window.scrollX;
+            const right = rect.right + window.scrollX;
             return { left, right, top, bottom };
         };
 
@@ -1181,6 +1185,9 @@
 
         const scheduleSelectionMenu = (pageX, pageY, delay = 1000) => {
             if (!selectionMenu || !activeEditor) return;
+            const now = Date.now();
+            if (now - lastSelectionCheck < SELECTION_CHECK_INTERVAL) return;
+            lastSelectionCheck = now;
             const range = activeEditor.getSelectionRange();
             if (range.isEmpty()) return;
             if (!isPointerInSelection(pageX, pageY) && !isPointerOnMenu(pageX, pageY)) {
