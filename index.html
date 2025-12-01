@@ -1256,6 +1256,18 @@
             editorInstance.insert(text);
         };
 
+        const generateUuid = () => {
+            if (crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+            const rand = () => (crypto && crypto.getRandomValues)
+                ? crypto.getRandomValues(new Uint8Array(1))[0] % 16
+                : Math.floor(Math.random() * 16);
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+                const r = rand();
+                const v = c === 'x' ? r : (r & 0x3) | 0x8;
+                return v.toString(16);
+            });
+        };
+
         const getLocaleDayPeriod = (date) => {
             try {
                 const locale = navigator.language || 'en';
@@ -1289,6 +1301,7 @@
 
         const registerTimeCommands = (editorInstance) => {
             const commands = [
+                { name: 'insertUuid', bindKey: { win: 'Ctrl-Shift-6', mac: 'Command-Shift-6' }, exec: () => generateUuid() },
                 { name: 'insertDateTimeZh', bindKey: { win: 'Ctrl-Shift-7', mac: 'Command-Shift-7' }, pattern: localePatterns.full },
                 { name: 'insertDateZh', bindKey: { win: 'Ctrl-Shift-8', mac: 'Command-Shift-8' }, pattern: localePatterns.dateZh },
                 { name: 'insertDateSlash', bindKey: { win: 'Ctrl-Shift-9', mac: 'Command-Shift-9' }, pattern: localePatterns.dateSlash },
@@ -1298,7 +1311,13 @@
                 editorInstance.commands.addCommand({
                     name: cmd.name,
                     bindKey: cmd.bindKey,
-                    exec: (ed) => insertTimestamp(ed, cmd.pattern)
+                    exec: (ed) => {
+                        if (cmd.exec) {
+                            ed.insert(cmd.exec());
+                            return;
+                        }
+                        insertTimestamp(ed, cmd.pattern);
+                    }
                 });
             });
         };
