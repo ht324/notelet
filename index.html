@@ -272,6 +272,11 @@
             cursor: pointer;
         }
 
+        .status-action.active {
+            border-color: #3a6df0;
+            color: #dce6ff;
+        }
+
         .status-action:hover {
             background: #2a2a2a;
         }
@@ -294,6 +299,21 @@
 
         .theme-toggle .icon {
             margin-right: 0;
+        }
+
+        .icon-wrap-on {
+            mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M17 12v6a2 2 0 0 1-2 2h-2"/><polyline points="15 14 17 12 19 14"/></svg>');
+            -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M17 12v6a2 2 0 0 1-2 2h-2"/><polyline points="15 14 17 12 19 14"/></svg>');
+        }
+
+        .icon-wrap-off {
+            mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M15 12h6"/><polyline points="18 9 21 12 18 15"/></svg>');
+            -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M15 12h6"/><polyline points="18 9 21 12 18 15"/></svg>');
+        }
+
+        .icon-wrap {
+            mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M17 12v6a2 2 0 0 1-2 2h-2"/></svg>');
+            -webkit-mask-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 12h12"/><path d="M3 18h8"/><path d="M17 12v6a2 2 0 0 1-2 2h-2"/></svg>');
         }
 
         .icon-refresh {
@@ -809,6 +829,7 @@
                 </select>
                 <button id="format-pretty" class="status-action" title="格式化 (Pretty)"><span class="icon icon-format" aria-hidden="true"></span></button>
                 <button id="format-compact" class="status-action" title="壓縮 (Compact)"><span class="icon icon-compact" aria-hidden="true"></span></button>
+                <button id="wrap-toggle" class="status-action" title="自動換行"><span class="icon icon-wrap-off" aria-hidden="true"></span></button>
             </div>
         <div id="status-tools">
             <button id="load-latest"><span class="icon icon-refresh" aria-hidden="true"></span>Load latest</button>
@@ -861,6 +882,7 @@
         const statusText = document.getElementById('status-text');
         const formatPretty = document.getElementById('format-pretty');
         const formatCompact = document.getElementById('format-compact');
+        const wrapToggle = document.getElementById('wrap-toggle');
         const loadLatestBtn = document.getElementById('load-latest');
         const historyBtn = document.getElementById('open-history');
         const historyCountLabel = document.getElementById('history-count');
@@ -887,6 +909,7 @@
         const MAX_SESSIONS = 20;
         const RESIZER_WIDTH = 7;
         const THEME_STORAGE_KEY = 'notelet-theme';
+        const WRAP_STORAGE_KEY = 'notelet-wrap';
         const systemDarkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
         const getStoredThemePref = () => {
             try {
@@ -903,6 +926,14 @@
 
         let themePreference = getStoredThemePref();
         let resolvedTheme = resolveTheme(themePreference, systemDarkQuery ? systemDarkQuery.matches : false);
+        let wrapPreference = (() => {
+            try {
+                const v = localStorage.getItem(WRAP_STORAGE_KEY);
+                return v === '1';
+            } catch (_) {
+                return false;
+            }
+        })();
 
         const getAceTheme = () => resolvedTheme === 'light' ? 'ace/theme/chrome' : 'ace/theme/monokai';
 
@@ -1088,7 +1119,8 @@
         const persistPage = async () => {
             const snapshot = editors.map(ed => ({
                 content: ed.getValue(),
-                mode: ed.session.$modeId
+                mode: ed.session.$modeId,
+                wrap: ed.session.getUseWrapMode()
             }));
             const updatedAt = Date.now();
             const hasContent = snapshot.some(e => e.content.trim().length > 0);
@@ -1118,6 +1150,31 @@
             const firstLine = (activeEditor.getValue() || '').split(/\r?\n/)[0].trim();
             const display = firstLine.slice(0, 20);
             document.title = display ? `${display} - Notelet` : 'Notelet';
+        };
+
+        const updateWrapToggleUI = () => {
+            if (!wrapToggle || !activeEditor) return;
+            const useWrap = activeEditor.getSession().getUseWrapMode();
+            const icon = wrapToggle.querySelector('.icon');
+            if (icon) {
+                icon.className = `icon ${useWrap ? 'icon-wrap-on' : 'icon-wrap-off'}`;
+            }
+        };
+
+        const setWrapPreference = (useWrap) => {
+            wrapPreference = !!useWrap;
+            try {
+                localStorage.setItem(WRAP_STORAGE_KEY, wrapPreference ? '1' : '0');
+            } catch (_) {}
+        };
+
+        const toggleWrap = () => {
+            if (!activeEditor) return;
+            const useWrap = !activeEditor.getSession().getUseWrapMode();
+            activeEditor.getSession().setUseWrapMode(useWrap);
+            setWrapPreference(useWrap);
+            updateWrapToggleUI();
+            persistPage();
         };
 
         let selectionHoverTimer = null;
@@ -1375,6 +1432,7 @@
             updateSavedOptions();
             updateStatus();
             updateDocumentTitle();
+            updateWrapToggleUI();
             formatPretty.style.display = isFormatSupported(modeId) ? 'inline-flex' : 'none';
             formatCompact.style.display = simplifyMode(modeId) === 'json' ? 'inline-flex' : 'none';
         };
@@ -1668,7 +1726,7 @@
             setHistoryCountDisplay((sessions || []).length);
         };
 
-        const addEditorPane = (initialContent = '', initialMode = currentMode, suppressPersist = false) => {
+        const addEditorPane = (initialContent = '', initialMode = currentMode, suppressPersist = false, initialWrap = wrapPreference) => {
             const { pane, editorInstance } = createPane();
             editors.push(editorInstance);
             const panes = Array.from(container.querySelectorAll('.pane'));
@@ -1676,6 +1734,7 @@
             layoutPanes(panes);
 
             editorInstance.session.setMode(initialMode || currentMode);
+            editorInstance.session.setUseWrapMode(!!initialWrap);
             if (initialContent !== undefined && initialContent !== null) {
                 if (suppressPersist) editorInstance.__suppressPersist = true;
                 editorInstance.setValue(initialContent, -1);
@@ -1729,6 +1788,9 @@
 
         formatPretty.addEventListener('click', () => handleFormat('pretty'));
         formatCompact.addEventListener('click', () => handleFormat('compact'));
+        if (wrapToggle) {
+            wrapToggle.addEventListener('click', toggleWrap);
+        }
 
         const applySnapshot = (snapshot, replace = false) => {
             if (!snapshot) return;
@@ -1742,7 +1804,7 @@
                 container.innerHTML = '';
             }
             editorsData.forEach(ed => {
-                addEditorPane(ed.content || '', ed.mode || currentMode, true);
+                addEditorPane(ed.content || '', ed.mode || currentMode, true, ed.wrap !== undefined ? ed.wrap : wrapPreference);
             });
             setActiveEditor(editors[editors.length - 1]);
             pageId = generateSessionId();
