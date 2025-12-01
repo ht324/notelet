@@ -241,6 +241,13 @@
             background: #3a3a3a;
         }
 
+        .history-count {
+            margin-left: 6px;
+            color: #9da2ab;
+            font-weight: 500;
+            font-size: 11px;
+        }
+
         #mode-select {
             height: 28px;
             background: transparent;
@@ -631,6 +638,10 @@
             border-color: #d0d0d0;
         }
 
+        :root[data-theme="light"] .history-count {
+            color: #667085;
+        }
+
         :root[data-theme="light"] .pane {
             border-right: 1px solid #e0e0e0;
         }
@@ -760,7 +771,7 @@
             </div>
         <div id="status-tools">
             <button id="load-latest"><span class="icon icon-refresh" aria-hidden="true"></span>Load latest</button>
-            <button id="open-history"><span class="icon icon-history" aria-hidden="true"></span>History</button>
+            <button id="open-history"><span class="icon icon-history" aria-hidden="true"></span>History<span id="history-count" class="history-count"></span></button>
             <button id="add-editor"><span class="icon icon-add" aria-hidden="true"></span>Add editor</button>
             <button id="theme-toggle" class="theme-toggle" title="切換主題">
                 <span class="icon icon-theme-auto" aria-hidden="true"></span>
@@ -770,7 +781,7 @@
     <div id="history-overlay">
         <div id="history-modal">
             <div id="history-header">
-                <strong>歷史紀錄</strong>
+                <strong>歷史紀錄<span id="history-title-count" class="history-count"></span></strong>
                 <button id="history-close" class="modal-btn">關閉</button>
             </div>
             <div id="history-list"></div>
@@ -807,6 +818,7 @@
         const formatCompact = document.getElementById('format-compact');
         const loadLatestBtn = document.getElementById('load-latest');
         const historyBtn = document.getElementById('open-history');
+        const historyCountLabel = document.getElementById('history-count');
         const modalOverlay = document.getElementById('modal-overlay');
         const modalMessage = document.getElementById('modal-message');
         const modalOk = document.getElementById('modal-ok');
@@ -814,6 +826,7 @@
         const historyOverlay = document.getElementById('history-overlay');
         const historyList = document.getElementById('history-list');
         const historyClose = document.getElementById('history-close');
+        const historyTitleCount = document.getElementById('history-title-count');
         const toast = document.getElementById('toast');
         let activeEditor = null;
         let currentMode = modeSelect.value;
@@ -1038,6 +1051,7 @@
             }
             await putSession({ id: pageId, editors: snapshot, updatedAt });
             await pruneSessions();
+            updateHistoryCount();
         };
 
         const updateStatus = () => {
@@ -1400,6 +1414,17 @@
             // no-op placeholder (history modal fetches sessions on open)
         };
 
+        const setHistoryCountDisplay = (count) => {
+            const text = `(${count}/${MAX_SESSIONS})`;
+            if (historyCountLabel) historyCountLabel.textContent = text;
+            if (historyTitleCount) historyTitleCount.textContent = ` ${text}`;
+        };
+
+        const updateHistoryCount = async () => {
+            const sessions = await listSessions();
+            setHistoryCountDisplay((sessions || []).length);
+        };
+
         const addEditorPane = (initialContent = '', initialMode = currentMode, suppressPersist = false) => {
             const { pane, editorInstance } = createPane();
             editors.push(editorInstance);
@@ -1590,7 +1615,9 @@
 
         const renderHistoryCards = async () => {
             const currentId = activeEditor ? activeEditor.__sessionId : null;
-            const sessions = (await listSessions()).filter(s => s.id !== currentId);
+            const allSessions = await listSessions();
+            const sessions = (allSessions || []).filter(s => s.id !== currentId);
+            setHistoryCountDisplay((allSessions || []).length);
             historyList.innerHTML = '';
             if (!sessions.length) {
                 historyList.innerHTML = '<div style="color:#ccc;">目前沒有歷史紀錄</div>';
@@ -1637,6 +1664,7 @@
                     if (!ok) return;
                     await deleteSession(s.id);
                     renderHistoryCards();
+                    updateHistoryCount();
                 });
 
                 historyList.appendChild(card);
@@ -1687,15 +1715,15 @@
 
         loadLatestBtn.addEventListener('click', handleLoadLatest);
         tabLoad.addEventListener('click', handleTabLoad);
-        tabHistory.addEventListener('click', handleTabHistory);
-        tabAdd.addEventListener('click', handleTabAdd);
-        if (tabThemeToggle) {
-            tabThemeToggle.addEventListener('click', (e) => {
-                e.stopPropagation();
-                applyTheme(nextTheme(themePreference));
-            });
-        }
-
+            tabHistory.addEventListener('click', handleTabHistory);
+            tabAdd.addEventListener('click', handleTabAdd);
+            if (tabThemeToggle) {
+                tabThemeToggle.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    applyTheme(nextTheme(themePreference));
+                });
+            }
+        updateHistoryCount();
         addEditorPane();
 
         const params = new URLSearchParams(window.location.search);
