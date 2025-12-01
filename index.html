@@ -1049,6 +1049,16 @@
             statusText.textContent = `Ln ${row + 1}, Col ${column + 1} | Chars ${totalChars} | Bytes ${bytes}`;
         };
 
+        const updateDocumentTitle = () => {
+            if (!activeEditor) {
+                document.title = 'Notelet';
+                return;
+            }
+            const firstLine = (activeEditor.getValue() || '').split(/\r?\n/)[0].trim();
+            const display = firstLine.slice(0, 20);
+            document.title = display ? `${display} - Notelet` : 'Notelet';
+        };
+
         const updateCloseButtons = () => {
             const show = !isMobile() && editors.length > 1;
             editors.forEach(ed => {
@@ -1162,6 +1172,7 @@
             updatePaneVisibility();
             updateSavedOptions();
             updateStatus();
+            updateDocumentTitle();
             formatPretty.style.display = isFormatSupported(modeId) ? 'inline-flex' : 'none';
             formatCompact.style.display = simplifyMode(modeId) === 'json' ? 'inline-flex' : 'none';
         };
@@ -1284,9 +1295,11 @@
                 if (editorInstance.__suppressPersist) {
                     editorInstance.__suppressPersist = false;
                     updateStatus();
+                    if (editorInstance === activeEditor) updateDocumentTitle();
                     return;
                 }
                 updateStatus();
+                if (editorInstance === activeEditor) updateDocumentTitle();
                 persistPage();
             });
             editorInstance.on('focus', () => setActiveEditor(editorInstance));
