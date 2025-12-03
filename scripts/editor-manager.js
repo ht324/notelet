@@ -323,6 +323,284 @@ export class EditorManager {
         this.selectionController.attachToEditor(editorInstance);
     }
 
+    hasImageInTransfer(dataTransfer) {
+        if (!dataTransfer) return false;
+        const files = Array.from(dataTransfer.files || []);
+        if (files.some(file => file && file.type.startsWith('image/'))) return true;
+        const items = Array.from(dataTransfer.items || []);
+        return items.some(item => item.kind === 'file' && item.type.startsWith('image/'));
+    }
+
+    readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => reject(new Error('讀取圖片失敗'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    loadImageFromDataURL(dataUrl) {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = () => reject(new Error('讀取圖片失敗'));
+            img.src = dataUrl;
+        });
+    }
+
+    async compressImageFile(file, { maxWidth = 1280, maxHeight = 1280, quality = 0.82 } = {}) {
+        const originalDataUrl = await this.readFileAsDataURL(file);
+        let image;
+        try {
+            image = await this.loadImageFromDataURL(originalDataUrl);
+        } catch (_) {
+            return { dataUrl: originalDataUrl, width: 0, height: 0 };
+        }
+        const { width, height } = image;
+        if (!width || !height) return { dataUrl: originalDataUrl, width, height };
+
+        const ratio = Math.min(maxWidth / width, maxHeight / height, 1);
+        if (ratio >= 1) return { dataUrl: originalDataUrl, width, height };
+
+        const targetW = Math.round(width * ratio);
+        const targetH = Math.round(height * ratio);
+        const canvas = document.createElement('canvas');
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, targetW, targetH);
+        const outputType = file.type && file.type.startsWith('image/') ? file.type : 'image/jpeg';
+        const dataUrl = canvas.toDataURL(outputType, quality);
+        return { dataUrl, width: targetW, height: targetH };
+    }
+
+    buildImageSnippet(fileName, dataUrl) {
+        const base = (fileName || 'image').split('.').slice(0, -1).join('.') || fileName || 'image';
+        const alt = (base || 'image').slice(0, 50);
+        return `![${alt}](${dataUrl})`;
+    }
+
+    async insertImagesFromDrop(editorInstance, files) {
+        if (!files || !files.length) return;
+        for (const file of files) {
+            try {
+                const { dataUrl } = await this.compressImageFile(file);
+                const cursorPos = editorInstance.getCursorPosition();
+                const prefix = cursorPos.column === 0 ? '' : '\n';
+                const snippet = `${prefix}${this.buildImageSnippet(file?.name, dataUrl)}\n`;
+                editorInstance.insert(snippet);
+                const markdownRow = cursorPos.column === 0 ? cursorPos.row : cursorPos.row + 1;
+                this.addImageOverlay(editorInstance, dataUrl, { row: markdownRow });
+            } catch (e) {
+                this.showToast?.('插入圖片失敗');
+                return;
+            }
+        }
+        await this.persistPage();
+        this.showToast?.('已插入圖片');
+    }
+
+    setupDropTarget(pane, editorInstance, editorEl) {
+        const highlight = () => pane.classList.add('pane-drop-active');
+        const clearHighlight = () => pane.classList.remove('pane-drop-active');
+        const dragCounter = { count: 0 };
+        const targets = [pane, editorEl].filter(Boolean);
+
+        const handleDragEnter = (e) => {
+            if (!this.hasImageInTransfer(e.dataTransfer)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter.count += 1;
+            highlight();
+        };
+
+        const handleDragOver = (e) => {
+            if (!this.hasImageInTransfer(e.dataTransfer)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'copy';
+            highlight();
+        };
+
+        const handleDragLeave = (e) => {
+            if (!this.hasImageInTransfer(e.dataTransfer)) return;
+            dragCounter.count = Math.max(0, dragCounter.count - 1);
+            if (dragCounter.count === 0) clearHighlight();
+        };
+
+        const handleDrop = async (e) => {
+            if (!this.hasImageInTransfer(e.dataTransfer)) return;
+            e.preventDefault();
+            e.stopPropagation();
+            clearHighlight();
+            dragCounter.count = 0;
+            this.setActiveEditor(editorInstance);
+            let files = Array.from(e.dataTransfer.files || []).filter(file => file.type.startsWith('image/'));
+            if (!files.length && e.dataTransfer.items) {
+                files = Array.from(e.dataTransfer.items || [])
+                    .map(item => (item.kind === 'file' ? item.getAsFile() : null))
+                    .filter(file => file && file.type.startsWith('image/'));
+            }
+            await this.insertImagesFromDrop(editorInstance, files);
+        };
+
+        targets.forEach(el => {
+            el.addEventListener('dragenter', handleDragEnter);
+            el.addEventListener('dragover', handleDragOver);
+            el.addEventListener('dragleave', handleDragLeave);
+            el.addEventListener('drop', handleDrop);
+        });
+    }
+
+    setupImageOverlay(editorInstance, pane) {
+        const overlayLayer = document.createElement('div');
+        overlayLayer.className = 'image-overlay-layer';
+        pane.appendChild(overlayLayer);
+        editorInstance.__imageOverlays = [];
+        editorInstance.__overlayLayer = overlayLayer;
+
+        const render = () => this.updateImageOverlayPositions(editorInstance);
+        const schedule = () => {
+            if (editorInstance.__overlayRaf) cancelAnimationFrame(editorInstance.__overlayRaf);
+            editorInstance.__overlayRaf = requestAnimationFrame(render);
+        };
+        const handleChange = (delta) => {
+            if (!editorInstance.__imageOverlays?.length || !delta) return;
+            const startRow = delta.start.row;
+            const endRow = delta.end.row;
+            let rowDelta = 0;
+            if (delta.action === 'insert') {
+                rowDelta = (delta.lines?.length || 1) - 1;
+            } else if (delta.action === 'remove') {
+                rowDelta = -(endRow - startRow);
+            }
+            if (!rowDelta) return;
+            editorInstance.__imageOverlays.forEach(overlay => {
+                if (overlay.row === undefined || overlay.row === null) return;
+                if (delta.action === 'insert') {
+                    if (overlay.row >= startRow) overlay.row += rowDelta;
+                } else if (delta.action === 'remove') {
+                    if (overlay.row > endRow) {
+                        overlay.row += rowDelta;
+                    } else if (overlay.row >= startRow && overlay.row <= endRow) {
+                        overlay.row = startRow;
+                    }
+                }
+            });
+        };
+
+        editorInstance.renderer.on('afterRender', render);
+        editorInstance.session.on('change', (delta) => {
+            handleChange(delta);
+            schedule();
+        });
+        editorInstance.session.on('changeScrollTop', schedule);
+        editorInstance.session.on('changeScrollLeft', schedule);
+    }
+
+    ensureLineWidgets(editorInstance) {
+        if (editorInstance.__hasLineWidgets) return;
+        try {
+            const LineWidgets = ace.require('ace/line_widgets').LineWidgets;
+            const manager = new LineWidgets(editorInstance.session);
+            manager.attach(editorInstance);
+            editorInstance.__lineWidgets = manager;
+            editorInstance.__hasLineWidgets = true;
+        } catch (_) {
+            // line widgets unavailable; skip
+        }
+    }
+
+    updateImageWidget(editorInstance, overlay, pixelHeight) {
+        const manager = editorInstance.__lineWidgets;
+        if (!manager) return;
+        const row = overlay.row ?? overlay.widget?.row ?? 0;
+        if (overlay.widget) {
+            manager.removeLineWidget(overlay.widget);
+            overlay.widget = null;
+        }
+        const spacer = document.createElement('div');
+        spacer.className = 'image-line-spacer';
+        spacer.style.height = `${pixelHeight}px`;
+        overlay.widget = { row, el: spacer, pixelHeight, coverGutter: false, fullWidth: true, fixedWidth: true, inFront: false };
+        manager.addLineWidget(overlay.widget);
+    }
+
+    removeImageWidget(editorInstance, overlay) {
+        const manager = editorInstance.__lineWidgets;
+        if (overlay.widget && manager) {
+            manager.removeLineWidget(overlay.widget);
+        }
+        overlay.widget = null;
+    }
+
+    addImageOverlay(editorInstance, src, pos = null) {
+        if (!editorInstance.__overlayLayer) return;
+        const anchorPos = pos || editorInstance.getCursorPosition();
+        const container = editorInstance.__overlayLayer;
+        const el = document.createElement('img');
+        el.className = 'image-overlay';
+        el.style.display = 'none';
+        el.src = src;
+        container.appendChild(el);
+
+        const overlay = {
+            el,
+            row: Math.max(0, anchorPos.row || 0),
+            ready: false,
+            naturalWidth: 0,
+            naturalHeight: 0,
+            widget: null
+        };
+        editorInstance.__imageOverlays.push(overlay);
+
+        el.onload = () => {
+            overlay.naturalWidth = el.naturalWidth;
+            overlay.naturalHeight = el.naturalHeight;
+            overlay.ready = true;
+            el.style.display = 'block';
+            this.updateImageOverlayPositions(editorInstance);
+        };
+        el.onerror = () => {
+            el.remove();
+            this.removeImageWidget(editorInstance, overlay);
+            editorInstance.__imageOverlays = (editorInstance.__imageOverlays || []).filter(o => o !== overlay);
+        };
+    }
+
+    updateImageOverlayPositions(editorInstance) {
+        if (!editorInstance.__overlayLayer || !editorInstance.__imageOverlays) return;
+        const paneRect = editorInstance.__pane?.getBoundingClientRect();
+        if (!paneRect) return;
+        const renderer = editorInstance.renderer;
+        const config = renderer.layerConfig;
+        const lineHeight = config?.lineHeight || 18;
+        const maxWidth = Math.max(120, Math.min(480, (editorInstance.__pane?.clientWidth || 600) * 0.6));
+
+        editorInstance.__imageOverlays.forEach(overlay => {
+            if (!overlay.ready) return;
+            const posRow = overlay.row ?? 0;
+            const screen = renderer.textToScreenCoordinates(posRow, 0);
+            const left = screen.pageX - paneRect.left + 6;
+            const top = screen.pageY - paneRect.top + lineHeight;
+            if (top < -500 || top > paneRect.height + 500) {
+                overlay.el.style.display = 'none';
+                return;
+            }
+            const ratio = overlay.naturalWidth ? overlay.naturalHeight / overlay.naturalWidth : 1;
+            const width = maxWidth;
+            const height = Math.min(width * ratio, 360);
+            const widgetHeight = height + lineHeight;
+
+            overlay.el.style.display = 'block';
+            overlay.el.style.width = `${width}px`;
+            overlay.el.style.height = `${height}px`;
+            overlay.el.style.transform = `translate(${left}px, ${top}px)`;
+            this.updateImageWidget(editorInstance, overlay, widgetHeight);
+        });
+    }
+
     createPane() {
         const pane = document.createElement('div');
         pane.className = 'pane';
@@ -344,6 +622,9 @@ export class EditorManager {
         editorInstance.session.setMode(this.currentMode);
         editorInstance.session.setUseWrapMode(!!this.wrapPreference);
         this.attachEditorEvents(editorInstance);
+        this.ensureLineWidgets(editorInstance);
+        this.setupImageOverlay(editorInstance, pane);
+        this.setupDropTarget(pane, editorInstance, editorEl);
 
         closeBtn.addEventListener('click', async (e) => {
             e.stopPropagation();

@@ -166,6 +166,49 @@ body {
     display: none;
 }
 
+.image-overlay-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    z-index: 3;
+}
+
+.image-overlay {
+    position: absolute;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+    background: rgba(0, 0, 0, 0.3);
+}
+
+.image-line-spacer {
+    pointer-events: none;
+}
+
+.pane-drop-active {
+    outline: 2px dashed #4da3ff;
+    outline-offset: -3px;
+}
+
+.pane-drop-active::after {
+    content: '放開以插入圖片';
+    position: absolute;
+    inset: 6px;
+    border: 2px dashed #4da3ff;
+    border-radius: 10px;
+    background: rgba(77, 163, 255, 0.08);
+    color: #d4e7ff;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 4;
+    box-shadow: 0 0 0 1px rgba(77, 163, 255, 0.15);
+}
+
 #status {
     box-sizing: border-box;
     min-height: 36px;
