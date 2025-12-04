@@ -5,8 +5,8 @@ import { tags } from "@lezer/highlight";
 const monokaiColors = {
   background: "#272822",
   foreground: "#F8F8F2",
-//  selection:  "#ffffff33",
-  selection:  "#ff000033",
+  selection:  "#49483E",
+  focusedSelection: "#49483E",
   lineHighlight: "#202020",
   caret: "#F8F8F0",
   gutterBackground: "#2F3129",
@@ -29,7 +29,12 @@ const monokaiTheme = EditorView.theme(
       lineHeight: "1.4",
     },
     ".cm-selectionBackground, .cm-content ::selection": {
-      //backgroundColor: monokaiColors.selection,
+      backgroundColor: monokaiColors.selection,
+      "--cm-selection-bg": monokaiColors.selection,
+    },
+    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+        backgroundColor: monokaiColors.focusedSelection,
+        "--cm-selection-bg": monokaiColors.focusedSelection,
     },
     ".cm-gutters": {
       backgroundColor: monokaiColors.gutterBackground,
@@ -37,7 +42,10 @@ const monokaiTheme = EditorView.theme(
     //   border: "none",
     },
     ".cm-activeLine": {
-      backgroundColor: monokaiColors.lineHighlight,
+      backgroundColor: "#00000000",
+    },
+    ".cm-activeLine-layer-marker": {
+        backgroundColor: monokaiColors.lineHighlight
     },
     ".cm-activeLineGutter": {
       backgroundColor: monokaiColors.gutterLineHighlight,

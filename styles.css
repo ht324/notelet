@@ -167,7 +167,7 @@ body {
 }
 
 .editor-host .cm-editor .cm-gutters.cm-gutter-shadow {
-    box-shadow: 12px 0 20px -10px rgba(0, 0, 0, 0.6);
+    box-shadow: 12px 0 20px -20px rgba(0, 0, 0, 0.6);
 }
 
 .editor-host .cm-line {
@@ -182,7 +182,28 @@ body {
 
 .editor-host .cm-content {
     padding: 0;
-    letter-spacing: 0.15em;
+}
+
+.editor-host .cm-selectionLayer > .cm-selectionBackground,
+.editor-host .cm-content ::selection {
+    border-radius: 3px;
+    box-shadow:
+        -2px 0 0 var(--cm-selection-bg, currentColor);
+    padding: 0 1px;
+}
+
+.editor-host .cm-selectionLayer > .cm-selectionBackground:not(:first-child) {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+
+.editor-host .cm-selectionLayer > .cm-selectionBackground:not(:last-child) {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.editor-host .cm-cjk {
+    letter-spacing: 0.2em;
 }
 
 .resizer {

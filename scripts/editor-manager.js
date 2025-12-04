@@ -4,7 +4,7 @@ import { formatContent } from './formatters.js';
 import { SelectionMenuController } from './selection-menu.js';
 import { registerSaveCommand, registerTimeCommands } from './editor-commands.js';
 import { EditorState, Compartment, StateEffect } from '@codemirror/state';
-import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers } from '@codemirror/view';
+import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator } from '@codemirror/view';
 import { defaultHighlightStyle, syntaxHighlighting, indentOnInput } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { javascript } from '@codemirror/lang-javascript';
@@ -38,7 +38,14 @@ const lightTheme = EditorView.theme({
     '&': { backgroundColor: '#fdfdfd', color: '#1f1f1f' },
     '.cm-content': { caretColor: '#111111' },
     '&.cm-focused .cm-cursor': { borderLeftColor: '#111111' },
-    '&.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: '#cce0ff' },
+    '.cm-selectionBackground, .cm-content ::selection': {
+        backgroundColor: '#dfe8ff',
+        '--cm-selection-bg': '#dfe8ff'
+    },
+    '&.cm-focused .cm-selectionBackground, &.cm-focused .cm-content ::selection': {
+        backgroundColor: '#cce0ff',
+        '--cm-selection-bg': '#cce0ff'
+    },
     '.cm-gutters': { backgroundColor: '#fdfdfd', color: '#5a5a5a', borderRight: '1px solid #dadada' }
 }, { dark: false });
 
@@ -59,6 +66,36 @@ const typographyTheme = EditorView.theme({
         fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, "Source Code Pro", source-code-pro, monospace',
         fontSize: '16px'
     }
+});
+
+const activeLineLayerTheme = EditorView.baseTheme({
+    '.cm-activeLine-layer': {
+        pointerEvents: 'none'
+    },
+    '.cm-activeLine-layer-marker': {
+        backgroundColor: 'rgba(0, 0, 0, 0.06)'
+    },
+    '&dark .cm-activeLine-layer-marker': {
+        backgroundColor: 'rgba(255, 255, 255, 0.06)'
+    }
+});
+
+const cjkDecorator = new MatchDecorator({
+    regexp: /[\u3400-\u9FFF]/g,
+    decoration: Decoration.mark({ class: 'cm-cjk' })
+});
+
+const cjkSpacingPlugin = ViewPlugin.fromClass(class {
+    constructor(view) {
+        this.decorations = cjkDecorator.createDeco(view);
+    }
+    update(update) {
+        if (update.docChanged || update.viewportChanged) {
+            this.decorations = cjkDecorator.updateDeco(update, this.decorations);
+        }
+    }
+}, {
+    decorations: (v) => v.decorations
 });
 
 class CMEditorWrapper {
@@ -82,6 +119,30 @@ class CMEditorWrapper {
         this.themeCompartment = new Compartment();
         this.keymapCompartment = new Compartment();
 
+        const activeLineLayer = layer({
+            above: false,
+            class: 'cm-activeLine-layer',
+            update: (update) => update.selectionSet || update.viewportChanged || update.docChanged,
+            markers: (view) => {
+                const selectionHasContent = view.state.selection.ranges.some(r => !r.empty);
+                if (selectionHasContent) return [];
+                const main = view.state.selection.main;
+                const block = view.lineBlockAt(main.head);
+                const scroll = view.scrollDOM;
+                const left = 0;
+                const width = scroll ? scroll.scrollWidth : null;
+                return [
+                    new RectangleMarker(
+                        'cm-activeLine-layer-marker',
+                        left,
+                        block.top,
+                        width,
+                        block.height
+                    )
+                ];
+            }
+        });
+
         const baseExtensions = [
             lineNumbers(),
             highlightSpecialChars(),
@@ -95,6 +156,9 @@ class CMEditorWrapper {
             rectangularSelection(),
             crosshairCursor(),
             typographyTheme,
+            cjkSpacingPlugin,
+            activeLineLayerTheme,
+            activeLineLayer,
             keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
             this.modeCompartment.of(languageForMode(this.__modeId)),
             this.wrapCompartment.of(this.__wrap ? EditorView.lineWrapping : []),
