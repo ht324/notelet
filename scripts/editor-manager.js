@@ -7,12 +7,13 @@ import { EditorState, Compartment, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator } from '@codemirror/view';
 import { defaultHighlightStyle, syntaxHighlighting, indentOnInput } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { searchKeymap, search, highlightSelectionMatches } from '@codemirror/search';
 import { javascript } from '@codemirror/lang-javascript';
 import { json as jsonLang } from '@codemirror/lang-json';
 import { xml } from '@codemirror/lang-xml';
 import { css as cssLang } from '@codemirror/lang-css';
 import { markdown as markdownLang } from '@codemirror/lang-markdown';
-import { monokai } from "./theme/monokaiTheme";
+import { monokai } from './theme/monokaiTheme.js';
 
 const isMobile = () => window.innerWidth <= 768;
 
@@ -118,6 +119,7 @@ class CMEditorWrapper {
         this.wrapCompartment = new Compartment();
         this.themeCompartment = new Compartment();
         this.keymapCompartment = new Compartment();
+        this.selectionHighlightCompartment = new Compartment();
 
         const activeLineLayer = layer({
             above: false,
@@ -156,10 +158,12 @@ class CMEditorWrapper {
             rectangularSelection(),
             crosshairCursor(),
             typographyTheme,
+            search({ top: true }),
             cjkSpacingPlugin,
             activeLineLayerTheme,
             activeLineLayer,
-            keymap.of([...defaultKeymap, ...historyKeymap, indentWithTab]),
+            this.selectionHighlightCompartment.of([]),
+            keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
             this.modeCompartment.of(languageForMode(this.__modeId)),
             this.wrapCompartment.of(this.__wrap ? EditorView.lineWrapping : []),
             this.themeCompartment.of(themeByName(this.__themeName)),
@@ -201,6 +205,16 @@ class CMEditorWrapper {
         this.scrollHandler = () => this.updateGutterShadow();
         this.view.scrollDOM?.addEventListener('scroll', this.scrollHandler, { passive: true });
         this.updateGutterShadow();
+        this.pointerHandler = (e) => {
+            this.setSelectionHighlight(!!e.metaKey);
+        };
+        this.pointerUpHandler = () => this.setSelectionHighlight(false);
+        this.view.dom.addEventListener('mousedown', this.pointerHandler, { passive: true });
+        window.addEventListener('mouseup', this.pointerUpHandler, { passive: true });
+    }
+
+    getView() {
+        return this.view;
     }
 
     updateGutterShadow() {
@@ -209,6 +223,11 @@ class CMEditorWrapper {
         if (!gutters || !scroller) return;
         const scrolled = scroller.scrollLeft > 1;
         gutters.classList.toggle('cm-gutter-shadow', scrolled);
+    }
+
+    setSelectionHighlight(enable) {
+        const ext = enable ? highlightSelectionMatches() : [];
+        this.view.dispatch({ effects: this.selectionHighlightCompartment.reconfigure(ext) });
     }
 
     lineChToPos({ line = 0, ch = 0 }) {
