@@ -8,6 +8,17 @@ export const hashString = (str) => {
 
 export const generateSessionId = () => `page-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 8)}`;
 
+const normalizeModeId = (modeId = '') => {
+    if (typeof modeId !== 'string') return 'text/plain';
+    const lower = modeId.toLowerCase();
+    if (lower.includes('json')) return 'application/json';
+    if (lower.includes('javascript') || lower.includes('js')) return 'javascript';
+    if (lower.includes('xml') || lower.includes('html')) return 'xml';
+    if (lower.includes('css')) return 'css';
+    if (lower.includes('markdown') || lower.includes('md')) return 'markdown';
+    return 'text/plain';
+};
+
 export const detectModeFromText = (text) => {
     if (typeof text !== 'string') return null;
     const trimmed = text.trim();
@@ -16,21 +27,33 @@ export const detectModeFromText = (text) => {
     if ((trimmed.startsWith('{') || trimmed.startsWith('['))) {
         try {
             JSON.parse(trimmed);
-            return 'ace/mode/json';
+            return 'application/json';
         } catch (_) {}
     }
 
-    if (/(function\s+\w+)|(=>)|(^|\n)\s*(const|let|var)\s+\w+/.test(trimmed)) return 'ace/mode/javascript';
-    if (/^<[^>]+>/.test(trimmed)) return 'ace/mode/xml';
-    if (/^[^{]+\{[^}]*:[^}]*\}/m.test(trimmed)) return 'ace/mode/css';
-    if (/^\s{0,3}#\s+.+/m.test(trimmed) || /^[-*]_\s*[-*]_\s*[-*]_/.test(trimmed) || /^>\s+.+/m.test(trimmed)) return 'ace/mode/markdown';
+    if (/(function\s+\w+)|(=>)|(^|\n)\s*(const|let|var)\s+\w+/.test(trimmed)) return 'javascript';
+    if (/^<[^>]+>/.test(trimmed)) return 'xml';
+    if (/^[^{]+\{[^}]*:[^}]*\}/m.test(trimmed)) return 'css';
+    if (/^\s{0,3}#\s+.+/m.test(trimmed) || /^[-*]_\s*[-*]_\s*[-*]_/.test(trimmed) || /^>\s+.+/m.test(trimmed)) return 'markdown';
     return null;
 };
 
 export const simplifyMode = (mode) => {
-    if (!mode) return 'text';
-    const parts = mode.split('/');
-    return parts[parts.length - 1];
+    const normalized = normalizeModeId(mode);
+    switch (normalized) {
+        case 'application/json':
+            return 'json';
+        case 'javascript':
+            return 'javascript';
+        case 'xml':
+            return 'xml';
+        case 'css':
+            return 'css';
+        case 'markdown':
+            return 'markdown';
+        default:
+            return 'text';
+    }
 };
 
 export const isFormatSupported = (modeId) => {
@@ -39,7 +62,7 @@ export const isFormatSupported = (modeId) => {
 };
 
 export const downloadMetaFromMode = (modeId) => {
-    const key = (modeId || '').split('/').pop() || 'txt';
+    const key = simplifyMode(modeId);
     switch (key) {
         case 'json':
             return { ext: 'json', mime: 'application/json' };
@@ -55,3 +78,15 @@ export const downloadMetaFromMode = (modeId) => {
             return { ext: 'txt', mime: 'text/plain' };
     }
 };
+
+export const toCodeMirrorMode = (modeId) => {
+    const key = simplifyMode(modeId);
+    if (key === 'json') return { name: 'javascript', json: true };
+    if (key === 'javascript') return { name: 'javascript' };
+    if (key === 'xml') return 'xml';
+    if (key === 'css') return 'css';
+    if (key === 'markdown') return 'markdown';
+    return 'text/plain';
+};
+
+export const normalizeModeIdForStore = (modeId) => normalizeModeId(modeId);

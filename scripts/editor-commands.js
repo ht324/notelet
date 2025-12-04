@@ -2,22 +2,21 @@ import { downloadMetaFromMode, hashString } from './utils/editor-utils.js';
 import { formatTimestamp, generateUuid, localePatterns } from './utils/time-utils.js';
 
 export const registerSaveCommand = (editorInstance) => {
-    editorInstance.commands.addCommand({
-        name: 'saveToFile',
-        bindKey: { win: 'Ctrl-S', mac: 'Command-S' },
-        exec: (ed) => {
-            const content = ed.getValue();
-            const { ext, mime } = downloadMetaFromMode(ed.session.$modeId);
-            const downloadName = `${hashString(content)}.${ext}`;
-            const url = window.URL.createObjectURL(new Blob([ed.getValue()], { type: `${mime}; charset=UTF-8` }));
-            let a = document.createElement('a');
-            a.href = url;
-            a.download = downloadName;
-            a.click();
-            window.URL.revokeObjectURL(url);
-        },
-        readOnly: true
-    });
+    const handler = () => {
+        const content = editorInstance.getValue();
+        const modeId = editorInstance.getMode();
+        const { ext, mime } = downloadMetaFromMode(modeId);
+        const downloadName = `${hashString(content)}.${ext}`;
+        const url = window.URL.createObjectURL(new Blob([content], { type: `${mime}; charset=UTF-8` }));
+        let a = document.createElement('a');
+        a.href = url;
+        a.download = downloadName;
+        a.click();
+        window.URL.revokeObjectURL(url);
+    };
+    editorInstance.addKeymap([
+        { key: 'Mod-s', preventDefault: true, run: () => { handler(); return true; } }
+    ]);
 };
 
 export const registerTimeCommands = (editorInstance) => {
@@ -28,17 +27,16 @@ export const registerTimeCommands = (editorInstance) => {
         { name: 'insertDateSlash', bindKey: { win: 'Ctrl-Shift-9', mac: 'Command-Shift-9' }, pattern: localePatterns.dateSlash },
         { name: 'insertTimeZh', bindKey: { win: 'Ctrl-Shift-0', mac: 'Command-Shift-0' }, pattern: localePatterns.time }
     ];
-    commands.forEach((cmd) => {
-        editorInstance.commands.addCommand({
-            name: cmd.name,
-            bindKey: cmd.bindKey,
-            exec: (ed) => {
-                if (cmd.exec) {
-                    ed.insert(cmd.exec());
-                    return;
-                }
-                ed.insert(formatTimestamp(cmd.pattern));
-            }
-        });
+    const bindings = commands.flatMap((cmd) => {
+        const handler = () => {
+            const text = cmd.exec ? cmd.exec() : formatTimestamp(cmd.pattern);
+            editorInstance.replaceSelection(text);
+            return true;
+        };
+        return [
+            { key: cmd.bindKey.win.replace('Ctrl', 'Mod'), run: handler },
+            { key: cmd.bindKey.mac.replace('Command', 'Mod'), run: handler }
+        ];
     });
+    editorInstance.addKeymap(bindings);
 };

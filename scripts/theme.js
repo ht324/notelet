@@ -44,10 +44,6 @@ export class ThemeController {
         this.editorsGetter = fn;
     }
 
-    getAceTheme() {
-        return this.resolved === 'light' ? 'ace/theme/chrome' : 'ace/theme/monokai';
-    }
-
     nextTheme(pref = this.preference) {
         const isSystemDark = this.systemDarkQuery ? this.systemDarkQuery.matches : false;
         if (pref === 'auto') return isSystemDark ? 'light' : 'dark';
@@ -63,8 +59,7 @@ export class ThemeController {
                 localStorage.setItem(THEME_STORAGE_KEY, this.preference);
             } catch (_) {}
         }
-        const aceTheme = this.getAceTheme();
-        this.editorsGetter().forEach(ed => ed.setTheme(aceTheme));
+        this.editorsGetter().forEach(ed => ed.setTheme?.(this.resolved));
         this.updateToggleUI();
     }
 

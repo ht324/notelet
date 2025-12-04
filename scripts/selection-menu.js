@@ -1,5 +1,3 @@
-const Range = ace.require('ace/range').Range;
-
 export class SelectionMenuController {
     constructor({ menuEl, showToast, getActiveEditor }) {
         this.menuEl = menuEl;
@@ -12,6 +10,21 @@ export class SelectionMenuController {
         this.lastSelectionCheck = 0;
         this.CHECK_INTERVAL = 80;
         this.bindMenu();
+    }
+
+    getPrimarySelection(ed = this.getActiveEditor()) {
+        if (!ed?.listSelections) return null;
+        const selections = ed.listSelections();
+        if (!selections || !selections.length) return null;
+        const sel = selections[0];
+        const anchor = sel.anchor || { line: 0, ch: 0 };
+        const head = sel.head || { line: 0, ch: 0 };
+        const cmp = (a, b) => (a.line === b.line ? a.ch - b.ch : a.line - b.line);
+        const isForward = cmp(anchor, head) <= 0;
+        const from = isForward ? anchor : head;
+        const to = isForward ? head : anchor;
+        const isEmpty = from.line === to.line && from.ch === to.ch;
+        return { from, to, isEmpty, editor: ed };
     }
 
     bindMenu() {
@@ -34,12 +47,12 @@ export class SelectionMenuController {
     }
 
     attachToEditor(editorInstance) {
-        const containerEl = editorInstance?.renderer?.container;
+        const containerEl = editorInstance?.getWrapperElement?.();
         if (!containerEl) return;
         containerEl.addEventListener('mousemove', (e) => {
             if (this.getActiveEditor() !== editorInstance) return;
-            const pageX = e.clientX + window.scrollX;
-            const pageY = e.clientY + window.scrollY;
+            const pageX = e.pageX ?? (e.clientX + window.scrollX);
+            const pageY = e.pageY ?? (e.clientY + window.scrollY);
             this.schedule(pageX, pageY, 1000);
         });
         containerEl.addEventListener('mouseleave', (e) => {
@@ -50,8 +63,8 @@ export class SelectionMenuController {
             if (this.getActiveEditor() !== editorInstance) return;
             const touch = e.touches && e.touches[0];
             if (!touch) return;
-            const range = editorInstance.getSelectionRange();
-            if (range.isEmpty()) return;
+            const selection = this.getPrimarySelection(editorInstance);
+            if (!selection || selection.isEmpty) return;
             if (!this.updateMenuActions()) return;
             this.clearTouchTimer();
             const pageX = touch.clientX + window.scrollX;
@@ -64,16 +77,12 @@ export class SelectionMenuController {
         containerEl.addEventListener('touchcancel', () => this.clearTouchTimer());
     }
 
-    handleSelectionChange() {
-        this.hide();
-    }
-
     handleAction(action) {
         const activeEditor = this.getActiveEditor();
         if (!activeEditor) return;
-        const sel = activeEditor.getSelectionRange();
-        if (sel.isEmpty()) return;
-        const text = activeEditor.session.getTextRange(sel);
+        const selection = this.getPrimarySelection(activeEditor);
+        if (!selection || selection.isEmpty) return;
+        const text = activeEditor.getRange(selection.from, selection.to);
         if (!text) return;
         let next = text;
         if (action === 'toggle-case') {
@@ -88,28 +97,26 @@ export class SelectionMenuController {
         } else {
             return;
         }
-        const start = sel.start;
-        activeEditor.session.replace(sel, next);
+        const start = selection.from;
+        activeEditor.replaceRange(next, selection.from, selection.to);
         const lines = next.split('\n');
-        const endRow = start.row + lines.length - 1;
-        const endCol = lines.length === 1 ? start.column + lines[0].length : lines[lines.length - 1].length;
-        activeEditor.selection.setSelectionRange(new Range(start.row, start.column, endRow, endCol));
+        const endLine = start.line + lines.length - 1;
+        const endCh = lines.length === 1 ? start.ch + lines[0].length : lines[lines.length - 1].length;
+        activeEditor.setSelection(start, { line: endLine, ch: endCh });
         this.hide();
     }
 
     getSelectionBounds(ed) {
         if (!ed) return null;
-        const range = ed.getSelectionRange();
-        if (range.isEmpty()) return null;
-        const renderer = ed.renderer;
-        const start = renderer.textToScreenCoordinates(range.start.row, range.start.column);
-        const end = renderer.textToScreenCoordinates(range.end.row, range.end.column);
-        const lineHeight = renderer.lineHeight || 16;
-        const top = Math.min(start.pageY, end.pageY);
-        const bottom = Math.max(start.pageY, end.pageY) + lineHeight;
-        const rect = renderer.container.getBoundingClientRect();
-        const left = rect.left + window.scrollX;
-        const right = rect.right + window.scrollX;
+        const selection = this.getPrimarySelection(ed);
+        if (!selection || selection.isEmpty) return null;
+        const startCoords = ed.cursorCoords(selection.from, 'page');
+        const endCoords = ed.cursorCoords(selection.to, 'page');
+        if (!startCoords || !endCoords) return null;
+        const top = Math.min(startCoords.top, endCoords.top);
+        const bottom = Math.max(startCoords.bottom, endCoords.bottom);
+        const left = Math.min(startCoords.left, endCoords.left);
+        const right = Math.max(startCoords.right, endCoords.right);
         return { left, right, top, bottom };
     }
 
@@ -132,8 +139,8 @@ export class SelectionMenuController {
         const now = Date.now();
         if (now - this.lastSelectionCheck < this.CHECK_INTERVAL) return;
         this.lastSelectionCheck = now;
-        const range = this.getActiveEditor().getSelectionRange();
-        if (range.isEmpty()) return;
+        const selection = this.getPrimarySelection(this.getActiveEditor());
+        if (!selection || selection.isEmpty) return;
         if (!this.isPointerInSelection(pageX, pageY) && !this.isPointerOnMenu(pageX, pageY)) {
             if (this.hideTimer) clearTimeout(this.hideTimer);
             this.hideTimer = setTimeout(() => this.hide(), 200);
@@ -171,9 +178,9 @@ export class SelectionMenuController {
     updateMenuActions() {
         const activeEditor = this.getActiveEditor();
         if (!this.menuEl || !activeEditor) return false;
-        const range = activeEditor.getSelectionRange();
-        if (range.isEmpty()) return false;
-        const text = activeEditor.session.getTextRange(range) || '';
+        const selection = this.getPrimarySelection(activeEditor);
+        if (!selection || selection.isEmpty) return false;
+        const text = activeEditor.getRange(selection.from, selection.to) || '';
         const hasLatin = /[A-Za-z]/.test(text);
         const toggleBtn = this.menuEl.querySelector('[data-action="toggle-case"]');
         if (toggleBtn) {

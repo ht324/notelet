@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="多分頁 Ace 編輯器，支援離線 PWA、快照歷史、模式切換與多窗/行動分頁切換。">
+    <meta name="description" content="多分頁 CodeMirror 編輯器，支援離線 PWA、快照歷史、模式切換與多窗/行動分頁切換。">
     <title>Notelet</title>
     <link rel="manifest" href="manifest.webmanifest">
     <meta name="theme-color" content="#111111">
@@ -26,12 +26,12 @@
             <div id="status-left">
                 <div id="status-text">Ln 1, Col 1</div>
                 <select id="mode-select" aria-label="Mode">
-                <option value="ace/mode/text">text</option>
-                    <option value="ace/mode/json">json</option>
-                <option value="ace/mode/javascript">javascript</option>
-                    <option value="ace/mode/css">css</option>
-                    <option value="ace/mode/xml">xml</option>
-                    <option value="ace/mode/markdown">markdown</option>
+                <option value="text/plain">text</option>
+                    <option value="application/json">json</option>
+                <option value="javascript">javascript</option>
+                    <option value="css">css</option>
+                    <option value="xml">xml</option>
+                    <option value="markdown">markdown</option>
                 </select>
                 <button id="format-pretty" class="status-action" title="格式化 (Pretty)"><span class="icon icon-format" aria-hidden="true"></span></button>
                 <button id="format-compact" class="status-action" title="壓縮 (Compact)"><span class="icon icon-compact" aria-hidden="true"></span></button>
@@ -69,7 +69,6 @@
         <button type="button" data-action="toggle-case">轉換大小寫</button>
         <button type="button" data-action="decode-uri">Decode URI</button>
     </div>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/ace/1.43.3/ace.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsonlint/1.6.0/jsonlint.min.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify.min.js" type="text/javascript" charset="utf-8"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify-css.min.js" type="text/javascript" charset="utf-8"></script>

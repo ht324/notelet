@@ -11,6 +11,20 @@ html, body {
     --safe-left: env(safe-area-inset-left, 0px);
 }
 
+:root[data-theme="dark"] {
+    --editor-bg: #1b1b1b;
+    --editor-gutter-bg: #1b1b1b;
+    --editor-gutter-border: #2a2a2a;
+    --editor-cursor: #f0f0f0;
+}
+
+:root[data-theme="light"] {
+    --editor-bg: #fdfdfd;
+    --editor-gutter-bg: #fdfdfd;
+    --editor-gutter-border: #dadada;
+    --editor-cursor: #222222;
+}
+
 body {
     display: flex;
     flex-direction: column;
@@ -139,13 +153,36 @@ body {
     border-right: none;
 }
 
-.ace-host {
-    font-size: 16px;
+.editor-host {
     position: absolute;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
+    inset: 0;
+}
+
+.editor-host .cm-editor {
+    height: 100%;
+}
+
+.editor-host .cm-editor .cm-scroller {
+    height: 100%;
+}
+
+.editor-host .cm-editor .cm-gutters.cm-gutter-shadow {
+    box-shadow: 12px 0 20px -10px rgba(0, 0, 0, 0.6);
+}
+
+.editor-host .cm-line {
+    padding: 0 4px;
+    line-height: 1.3em;
+}
+
+.editor-host .cm-lineNumbers .cm-gutterElement {
+    padding: 0 13px 0 20px;
+    line-height: 1.3em;
+}
+
+.editor-host .cm-content {
+    padding: 0;
+    letter-spacing: 0.15em;
 }
 
 .resizer {
