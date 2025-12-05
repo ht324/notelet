@@ -1,10 +1,10 @@
 import { RESIZER_WIDTH, WRAP_STORAGE_KEY } from './constants.js';
-import { detectModeFromText, generateSessionId, simplifyMode, isFormatSupported, normalizeModeIdForStore } from './utils/editor-utils.js';
+import { detectModeFromText, generateSessionId, simplifyMode, isFormatSupported, normalizeModeIdForStore, hashString } from './utils/editor-utils.js';
 import { formatContent } from './formatters.js';
 import { SelectionMenuController } from './selection-menu.js';
 import { registerSaveCommand, registerTimeCommands } from './editor-commands.js';
 import { EditorState, Compartment, StateEffect } from '@codemirror/state';
-import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator } from '@codemirror/view';
+import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator, WidgetType } from '@codemirror/view';
 import { defaultHighlightStyle, syntaxHighlighting, indentOnInput } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search, highlightSelectionMatches } from '@codemirror/search';
@@ -14,6 +14,7 @@ import { xml } from '@codemirror/lang-xml';
 import { css as cssLang } from '@codemirror/lang-css';
 import { markdown as markdownLang } from '@codemirror/lang-markdown';
 import { monokai } from './theme/monokaiTheme.js';
+import { showLightbox } from './lightbox.js';
 
 const isMobile = () => window.innerWidth <= 768;
 
@@ -86,6 +87,33 @@ const cjkDecorator = new MatchDecorator({
     decoration: Decoration.mark({ class: 'cm-cjk' })
 });
 
+class ImageWidget extends WidgetType {
+    constructor(src, alt) {
+        super();
+        this.src = src;
+        this.alt = alt;
+    }
+    eq(other) {
+        return other.src === this.src && other.alt === this.alt;
+    }
+    toDOM() {
+        const img = document.createElement('img');
+        img.src = this.src;
+        img.alt = this.alt || '';
+        img.className = 'cm-inline-image';
+        img.draggable = false;
+        img.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            showLightbox(this.src, this.alt);
+        });
+        return img;
+    }
+    ignoreEvent() {
+        return true;
+    }
+}
+
 const cjkSpacingPlugin = ViewPlugin.fromClass(class {
     constructor(view) {
         this.decorations = cjkDecorator.createDeco(view);
@@ -106,6 +134,7 @@ class CMEditorWrapper {
         modeId = 'text/plain',
         wrap = false,
         themeName = 'dark',
+        images = [],
         onChange,
         onSelection,
         onCursor,
@@ -120,6 +149,59 @@ class CMEditorWrapper {
         this.themeCompartment = new Compartment();
         this.keymapCompartment = new Compartment();
         this.selectionHighlightCompartment = new Compartment();
+        this.imageStore = new Map();
+        this.imageHash = new Map();
+        this.hashToId = new Map();
+        this.removedImages = new Map();
+        if (Array.isArray(images)) {
+            images.forEach((item) => {
+                if (Array.isArray(item)) {
+                    const [id, data] = item;
+                    if (id && data) {
+                        const hash = hashString(data);
+                        this.imageStore.set(id, data);
+                        this.imageHash.set(id, hash);
+                        this.hashToId.set(hash, id);
+                    }
+                } else if (item && item.id && item.data) {
+                    const hash = item.hash || hashString(item.data);
+                    this.imageStore.set(item.id, item.data);
+                    this.imageHash.set(item.id, hash);
+                    this.hashToId.set(hash, item.id);
+                }
+            });
+        }
+        this.removedImages = new Map();
+
+        const imageDecorator = new MatchDecorator({
+            regexp: /\[\[img:([^\]\s]+)\]\]/g,
+            maxLength: 300000,
+            decoration: (match) => {
+                const id = match[1];
+                const src = this.imageStore.get(id);
+                if (!src) return null;
+                return Decoration.replace({
+                    widget: new ImageWidget(src, ''),
+                    inclusive: false,
+                    block: false
+                });
+            }
+        });
+
+        const owner = this;
+        const imagePreviewPlugin = ViewPlugin.fromClass(class {
+            constructor(view) {
+                this.decorations = imageDecorator.createDeco(view);
+            }
+            update(update) {
+                if (update.docChanged || update.viewportChanged) {
+                    owner.restoreMissingImages();
+                    this.decorations = imageDecorator.updateDeco(update, this.decorations);
+                }
+            }
+        }, {
+            decorations: v => v.decorations
+        });
 
         const activeLineLayer = layer({
             above: false,
@@ -160,10 +242,20 @@ class CMEditorWrapper {
             typographyTheme,
             search({ top: true }),
             cjkSpacingPlugin,
+            imagePreviewPlugin,
             activeLineLayerTheme,
             activeLineLayer,
             this.selectionHighlightCompartment.of([]),
-            keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+            keymap.of([
+                { key: 'Backspace', preventDefault: true, run: () => this.deleteImageAtCursor('backward') },
+                { key: 'Delete', preventDefault: true, run: () => this.deleteImageAtCursor('forward') },
+                { key: 'ArrowLeft', preventDefault: false, run: () => this.moveAcrossImage('left') },
+                { key: 'ArrowRight', preventDefault: false, run: () => this.moveAcrossImage('right') },
+                ...defaultKeymap,
+                ...historyKeymap,
+                ...searchKeymap,
+                indentWithTab
+            ]),
             this.modeCompartment.of(languageForMode(this.__modeId)),
             this.wrapCompartment.of(this.__wrap ? EditorView.lineWrapping : []),
             this.themeCompartment.of(themeByName(this.__themeName)),
@@ -177,6 +269,8 @@ class CMEditorWrapper {
                     onCursor?.(this);
                 }
                 if (update.docChanged) {
+                    this.pruneImageStore();
+                    this.restoreMissingImages();
                     onCursor?.(this);
                     onChange?.(this);
                 }
@@ -211,6 +305,14 @@ class CMEditorWrapper {
         this.pointerUpHandler = () => this.setSelectionHighlight(false);
         this.view.dom.addEventListener('mousedown', this.pointerHandler, { passive: true });
         window.addEventListener('mouseup', this.pointerUpHandler, { passive: true });
+        this.dragOverHandler = (e) => {
+            if (e.dataTransfer?.types?.includes('Files')) {
+                e.preventDefault();
+            }
+        };
+        this.dropHandler = (e) => this.handleDrop(e);
+        this.view.dom.addEventListener('dragover', this.dragOverHandler);
+        this.view.dom.addEventListener('drop', this.dropHandler);
     }
 
     getView() {
@@ -230,6 +332,73 @@ class CMEditorWrapper {
         this.view.dispatch({ effects: this.selectionHighlightCompartment.reconfigure(ext) });
     }
 
+    createImageId() {
+        return `img-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 8)}`;
+    }
+
+    registerImage(dataUrl) {
+        const hash = hashString(dataUrl);
+        const existing = this.hashToId.get(hash);
+        if (existing) {
+            this.removedImages.delete(existing);
+            return existing;
+        }
+        const id = this.createImageId();
+        this.imageStore.set(id, dataUrl);
+        this.imageHash.set(id, hash);
+        this.hashToId.set(hash, id);
+        this.removedImages.delete(id);
+        return id;
+    }
+
+    async handleDrop(event) {
+        if (!event.dataTransfer?.files?.length) return;
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer.files).filter(f => f.type && f.type.startsWith('image/'));
+        if (!files.length) return;
+        for (const file of files) {
+            const dataUrl = await this.compressImage(file);
+            const id = this.registerImage(dataUrl);
+            const snippet = `[[img:${id}]]`;
+            const tr = this.view.state.replaceSelection(snippet);
+            this.view.dispatch(tr);
+        }
+        this.view.focus();
+    }
+
+    readFileAsDataURL(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async compressImage(file, { maxWidth = 1600, maxHeight = 1600, quality = 0.8 } = {}) {
+        const src = await this.readFileAsDataURL(file);
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                const scale = Math.min(1, maxWidth / width, maxHeight / height);
+                if (scale < 1) {
+                    width = Math.floor(width * scale);
+                    height = Math.floor(height * scale);
+                }
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+                const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                resolve(dataUrl);
+            };
+            img.onerror = () => resolve(src);
+            img.src = src;
+        });
+    }
+
     lineChToPos({ line = 0, ch = 0 }) {
         const lineInfo = this.view.state.doc.line(Math.max(1, line + 1));
         return Math.min(lineInfo.from + ch, lineInfo.to);
@@ -244,6 +413,95 @@ class CMEditorWrapper {
     getCursor() {
         const pos = this.view.state.selection.main.head;
         return this.posToLineCh(pos);
+    }
+
+    getImageRangeAt(pos, { mode = 'default', direction = 'left' } = {}) {
+        const text = this.getValue() || '';
+        const re = /\[\[img:([^\]\s]+)\]\]/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            const from = m.index;
+            const to = from + m[0].length;
+            if (pos < from) continue;
+            if (pos > to) continue;
+            const atStart = pos === from;
+            const atEnd = pos === to;
+            const inside = pos > from && pos < to;
+            if (mode === 'delete') {
+                if (inside) return { from, to };
+                if (direction === 'forward' && atStart) return { from, to };
+                // backward delete should not trigger when cursor is after the marker with extra char
+                return null;
+            }
+            if (mode === 'arrow') {
+                if (inside) return { from, to };
+                if (direction === 'left' && atEnd) return { from, to };
+                if (direction === 'right' && atStart) return { from, to };
+                continue;
+            }
+            if (inside || atStart || atEnd) return { from, to };
+        }
+        return null;
+    }
+
+    deleteImageAtCursor(direction = 'backward') {
+        const sel = this.view.state.selection.main;
+        if (!sel.empty) return false;
+        const pos = direction === 'backward' ? Math.max(0, sel.from - 1) : sel.from;
+        const range = this.getImageRangeAt(pos, { mode: 'delete', direction });
+        if (!range) return false;
+        this.view.dispatch({ changes: { from: range.from, to: range.to, insert: '' } });
+        this.pruneImageStore();
+        return true;
+    }
+
+    moveAcrossImage(direction = 'left') {
+        const sel = this.view.state.selection.main;
+        if (!sel.empty) return false;
+        const pos = sel.from;
+        const range = this.getImageRangeAt(pos, { mode: 'arrow', direction });
+        if (!range) return false;
+        const target = direction === 'left' ? range.from : range.to;
+        this.view.dispatch({ selection: { anchor: target, head: target }, scrollIntoView: true });
+        return true;
+    }
+
+    getUsedImageIds() {
+        const text = this.getValue() || '';
+        const ids = new Set();
+        const re = /\[\[img:([^\]\s]+)\]\]/g;
+        let m;
+        while ((m = re.exec(text)) !== null) {
+            if (m[1]) ids.add(m[1]);
+        }
+        return ids;
+    }
+
+    pruneImageStore() {
+        const used = this.getUsedImageIds();
+        Array.from(this.imageStore.keys()).forEach((id) => {
+            if (!used.has(id)) {
+                const val = this.imageStore.get(id);
+                const hash = this.imageHash.get(id);
+                this.imageStore.delete(id);
+                if (val) this.removedImages.set(id, val);
+                if (hash) this.hashToId.delete(hash);
+                this.imageHash.delete(id);
+            }
+        });
+    }
+
+    restoreMissingImages() {
+        const used = this.getUsedImageIds();
+        used.forEach((id) => {
+            if (!this.imageStore.has(id) && this.removedImages.has(id)) {
+                const data = this.removedImages.get(id);
+                this.imageStore.set(id, data);
+                const hash = hashString(data);
+                this.imageHash.set(id, hash);
+                this.hashToId.set(hash, id);
+            }
+        });
     }
 
     getValue() {
@@ -654,7 +912,7 @@ export class EditorManager {
         }
     }
 
-    createPane() {
+    createPane(images = []) {
         const pane = document.createElement('div');
         pane.className = 'pane';
 
@@ -673,6 +931,7 @@ export class EditorManager {
             modeId: this.currentMode,
             wrap: this.wrapPreference,
             themeName: this.themeController?.resolved || 'dark',
+            images,
             onChange: (ed) => {
                 if (ed.__suppressPersist) {
                     ed.__suppressPersist = false;
@@ -709,8 +968,8 @@ export class EditorManager {
         return { pane, editorInstance };
     }
 
-    addEditorPane(initialContent = '', initialMode = this.currentMode, suppressPersist = false, initialWrap = this.wrapPreference) {
-        const { pane, editorInstance } = this.createPane();
+    addEditorPane(initialContent = '', initialMode = this.currentMode, suppressPersist = false, initialWrap = this.wrapPreference, images = []) {
+        const { pane, editorInstance } = this.createPane(images);
         this.editors.push(editorInstance);
         const panes = Array.from(this.container.querySelectorAll('.pane'));
         panes.push(pane);
@@ -751,7 +1010,12 @@ export class EditorManager {
             editors: this.editors.map(ed => ({
                 content: ed.getValue(),
                 mode: this.getEditorModeId(ed),
-                wrap: ed.getOption('lineWrapping')
+                wrap: ed.getOption('lineWrapping'),
+                images: ed.imageStore ? Array.from(ed.imageStore.entries()).map(([id, data]) => ({
+                    id,
+                    data,
+                    hash: ed.imageHash?.get(id) || hashString(data)
+                })) : []
             }))
         };
     }
@@ -767,7 +1031,7 @@ export class EditorManager {
             this.container.innerHTML = '';
         }
         editorsData.forEach(ed => {
-            this.addEditorPane(ed.content || '', ed.mode || this.currentMode, true, ed.wrap !== undefined ? ed.wrap : this.wrapPreference);
+            this.addEditorPane(ed.content || '', ed.mode || this.currentMode, true, ed.wrap !== undefined ? ed.wrap : this.wrapPreference, ed.images || []);
         });
         this.setActiveEditor(this.editors[this.editors.length - 1]);
         this.pageId = generateSessionId();
