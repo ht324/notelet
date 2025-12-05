@@ -12,6 +12,69 @@ export class SelectionMenuController {
         this.bindMenu();
     }
 
+    buildBbsTable(text) {
+        const widthOf = (str) => {
+            let w = 0;
+            for (const ch of str) {
+                w += /[\u1100-\u11ff\u2e80-\u9fff\uf900-\ufaff]/.test(ch) ? 2 : 1;
+            }
+            return w;
+        };
+        const rows = text.split(/\r?\n/).map((line) => {
+            const cols = [];
+            let buf = '';
+            let hasSep = false;
+            for (let i = 0; i < line.length; i++) {
+                const ch = line[i];
+                if (ch === '\\' && i < line.length - 1 && (line[i + 1] === '|' || line[i + 1] === '｜')) {
+                    buf += line[i + 1];
+                    i += 1;
+                    continue;
+                }
+                if (ch === '|' || ch === '｜') {
+                    cols.push(buf);
+                    buf = '';
+                    hasSep = true;
+                } else {
+                    buf += ch;
+                }
+            }
+            cols.push(buf);
+            return { cols, hasSep };
+        });
+        const validRows = rows.filter(r => r.hasSep && r.cols.length > 1);
+        if (!validRows.length) return null;
+        const colCount = Math.max(...validRows.map(r => r.cols.length));
+        const widths = Array(colCount).fill(0);
+        validRows.forEach(({ cols }) => {
+            for (let i = 0; i < colCount; i++) {
+                const cell = cols[i] || '';
+                const w = widthOf(cell);
+                widths[i] = Math.max(widths[i], w);
+            }
+        });
+        const top = '┌' + widths.map(w => '─'.repeat(w + 2)).join('┬') + '┐';
+        const bottom = '└' + widths.map(w => '─'.repeat(w + 2)).join('┴') + '┘';
+        const rowSep = '├' + widths.map(w => '─'.repeat(w + 2)).join('┼') + '┤';
+        const makeRow = (cols) => {
+            const parts = [];
+            for (let i = 0; i < colCount; i++) {
+                const cell = cols[i] || '';
+                const w = widthOf(cell);
+                const pad = ' '.repeat(Math.max(0, widths[i] - w));
+                parts.push(` ${cell}${pad} `);
+            }
+            return '│' + parts.join('│') + '│';
+        };
+        const body = validRows.map(r => makeRow(r.cols));
+        const withSeparators = [];
+        body.forEach((line, idx) => {
+            if (idx > 0) withSeparators.push(rowSep);
+            withSeparators.push(line);
+        });
+        return [top, ...withSeparators, bottom].join('\n');
+    }
+
     getPrimarySelection(ed = this.getActiveEditor()) {
         if (!ed?.listSelections) return null;
         const selections = ed.listSelections();
@@ -94,15 +157,25 @@ export class SelectionMenuController {
                 this.showToast('Decode URI 失敗');
                 return;
             }
+        } else if (action === 'bbs-table') {
+            const table = this.buildBbsTable(text);
+            if (!table) {
+                this.showToast('需含未跳脫的 | 才能產生表格');
+                return;
+            }
+            next = table;
         } else {
             return;
         }
         const start = selection.from;
         activeEditor.replaceRange(next, selection.from, selection.to);
-        const lines = next.split('\n');
-        const endLine = start.line + lines.length - 1;
-        const endCh = lines.length === 1 ? start.ch + lines[0].length : lines[lines.length - 1].length;
-        activeEditor.setSelection(start, { line: endLine, ch: endCh });
+        if (activeEditor.lineChToPos && activeEditor.posToLineCh) {
+            const anchorPos = activeEditor.lineChToPos(start);
+            const headPos = Math.min(anchorPos + next.length, activeEditor.getValue().length);
+            const anchorLC = activeEditor.posToLineCh(anchorPos);
+            const headLC = activeEditor.posToLineCh(headPos);
+            activeEditor.setSelection(anchorLC, headLC);
+        }
         this.hide();
     }
 
@@ -182,9 +255,14 @@ export class SelectionMenuController {
         if (!selection || selection.isEmpty) return false;
         const text = activeEditor.getRange(selection.from, selection.to) || '';
         const hasLatin = /[A-Za-z]/.test(text);
+        const hasUnescapedPipe = /(^|[^\\])[|｜]/m.test(text);
         const toggleBtn = this.menuEl.querySelector('[data-action="toggle-case"]');
         if (toggleBtn) {
             toggleBtn.style.display = hasLatin ? 'block' : 'none';
+        }
+        const bbsBtn = this.menuEl.querySelector('[data-action="bbs-table"]');
+        if (bbsBtn) {
+            bbsBtn.style.display = hasUnescapedPipe ? 'block' : 'none';
         }
         const buttons = Array.from(this.menuEl.querySelectorAll('button'));
         const hasVisible = buttons.some(btn => btn.style.display !== 'none');

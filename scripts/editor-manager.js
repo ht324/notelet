@@ -253,6 +253,14 @@ class CMEditorWrapper {
                 { key: 'Delete', preventDefault: true, run: () => this.deleteImageAtCursor('forward') },
                 { key: 'ArrowLeft', preventDefault: false, run: () => this.moveAcrossImage('left') },
                 { key: 'ArrowRight', preventDefault: false, run: () => this.moveAcrossImage('right') },
+                {
+                    key: 'Mod-Shift-\\',
+                    preventDefault: true,
+                    run: () => {
+                        this.selectionController?.handleAction('bbs-table');
+                        return true;
+                    }
+                },
                 ...defaultKeymap,
                 ...historyKeymap,
                 ...searchKeymap,
@@ -695,6 +703,20 @@ export class EditorManager {
             const panes = this.editors.map(ed => ed.__pane).filter(Boolean);
             this.layoutPanes(panes);
         });
+        const bbsHotkeyHandler = (e) => {
+            const isMod = e.metaKey || e.ctrlKey;
+            if (!isMod || !e.shiftKey) return;
+            if (e.key !== '\\') return;
+            const handled = this.selectionController?.handleAction('bbs-table');
+            if (handled !== false) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return true;
+            }
+            return false;
+        };
+        window.addEventListener('keydown', bbsHotkeyHandler, { capture: true });
+        window.addEventListener('keyup', bbsHotkeyHandler, { capture: true });
         this.renderTabs();
         this.updatePaneVisibility();
     }
