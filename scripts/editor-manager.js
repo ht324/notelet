@@ -149,6 +149,8 @@ class CMEditorWrapper {
         this.themeCompartment = new Compartment();
         this.keymapCompartment = new Compartment();
         this.selectionHighlightCompartment = new Compartment();
+        this.customKeymapCompartment = new Compartment();
+        this.customKeymaps = [];
         this.imageStore = new Map();
         this.imageHash = new Map();
         this.hashToId = new Map();
@@ -256,6 +258,7 @@ class CMEditorWrapper {
                 ...searchKeymap,
                 indentWithTab
             ]),
+            this.customKeymapCompartment.of(keymap.of([])),
             this.modeCompartment.of(languageForMode(this.__modeId)),
             this.wrapCompartment.of(this.__wrap ? EditorView.lineWrapping : []),
             this.themeCompartment.of(themeByName(this.__themeName)),
@@ -313,6 +316,7 @@ class CMEditorWrapper {
         this.dropHandler = (e) => this.handleDrop(e);
         this.view.dom.addEventListener('dragover', this.dragOverHandler);
         this.view.dom.addEventListener('drop', this.dropHandler);
+        this.registerCustomCommands();
     }
 
     getView() {
@@ -573,15 +577,30 @@ class CMEditorWrapper {
 
     replaceSelection(text) {
         const ranges = this.view.state.selection.ranges;
+        const start = ranges[0]?.from ?? 0;
+        const endPos = start + text.length;
         this.view.dispatch({
             changes: ranges.map(r => ({
                 from: r.from,
                 to: r.to,
                 insert: text
             })),
-            selection: { anchor: ranges[0]?.from ?? 0, head: (ranges[0]?.from ?? 0) + text.length },
+            selection: { anchor: endPos, head: endPos },
             scrollIntoView: true
         });
+    }
+
+    addKeymap(bindings = []) {
+        if (!bindings.length) return;
+        this.customKeymaps = [...this.customKeymaps, ...bindings];
+        this.view.dispatch({
+            effects: this.customKeymapCompartment.reconfigure(keymap.of(this.customKeymaps))
+        });
+    }
+
+    registerCustomCommands() {
+        registerSaveCommand(this);
+        registerTimeCommands(this);
     }
 
     cursorCoords(pos, _type) {
