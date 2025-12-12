@@ -176,12 +176,23 @@ body {
 }
 
 .editor-host .cm-lineNumbers .cm-gutterElement {
-    padding: 0 13px 0 20px;
+    min-width: 30px;
+    padding-left: 10px;
     line-height: 1.3em;
 }
 
 .editor-host .cm-content {
     padding: 0;
+}
+
+.editor-host .cm-foldGutter .cm-foldMarker {
+    color: #9da2ab;
+}
+
+.editor-host .cm-foldGutter span:hover{
+    background-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 1px 1px rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
 }
 
 .editor-host .cm-selectionLayer > .cm-selectionBackground,

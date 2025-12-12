@@ -5,7 +5,7 @@ import { SelectionMenuController } from './selection-menu.js';
 import { registerSaveCommand, registerTimeCommands } from './editor-commands.js';
 import { EditorState, Compartment, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator, WidgetType } from '@codemirror/view';
-import { defaultHighlightStyle, syntaxHighlighting, indentOnInput } from '@codemirror/language';
+import { defaultHighlightStyle, syntaxHighlighting, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search, highlightSelectionMatches } from '@codemirror/search';
 import { javascript } from '@codemirror/lang-javascript';
@@ -231,6 +231,8 @@ class CMEditorWrapper {
 
         const baseExtensions = [
             lineNumbers(),
+            foldGutter({ openText: '▾', closedText: '▸' }),
+            indentationMarkers(),
             highlightSpecialChars(),
             history(),
             drawSelection(),
