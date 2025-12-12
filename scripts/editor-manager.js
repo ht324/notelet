@@ -63,10 +63,15 @@ const lightTheme = EditorView.theme({
 
 const themeByName = (name) => (name === 'light' ? lightTheme : monokai);
 
-const typographyTheme = EditorView.theme({
+const fontSizeForMode = (modeId) => {
+    const simple = simplifyMode(modeId);
+    return (simple === 'text' || simple === 'markdown') ? '16px' : '14px';
+};
+
+const typographyThemeFor = (modeId) => EditorView.theme({
     '.cm-content, .cm-gutters': {
         fontFamily: 'Monaco, Menlo, "Ubuntu Mono", Consolas, "Source Code Pro", source-code-pro, monospace',
-        fontSize: '16px'
+        fontSize: fontSizeForMode(modeId)
     }
 });
 
@@ -150,6 +155,7 @@ class CMEditorWrapper {
         this.keymapCompartment = new Compartment();
         this.selectionHighlightCompartment = new Compartment();
         this.customKeymapCompartment = new Compartment();
+        this.typographyCompartment = new Compartment();
         this.customKeymaps = [];
         this.imageStore = new Map();
         this.imageHash = new Map();
@@ -243,7 +249,7 @@ class CMEditorWrapper {
             highlightActiveLineGutter(),
             rectangularSelection(),
             crosshairCursor(),
-            typographyTheme,
+            this.typographyCompartment.of(typographyThemeFor(this.__modeId)),
             search({ top: true }),
             cjkSpacingPlugin,
             imagePreviewPlugin,
@@ -539,6 +545,9 @@ class CMEditorWrapper {
         this.__modeId = normalizeModeIdForStore(modeId);
         this.view.dispatch({
             effects: this.modeCompartment.reconfigure(languageForMode(this.__modeId))
+        });
+        this.view.dispatch({
+            effects: this.typographyCompartment.reconfigure(typographyThemeFor(this.__modeId))
         });
     }
 
