@@ -9,7 +9,7 @@ const parseJsonSafe = (val) => {
 
 const formatters = {
     json: {
-        pretty: (val) => JSON.stringify(parseJsonSafe(val), null, 2),
+        pretty: (val) => JSON.stringify(parseJsonSafe(val), null, "\t"),
         compact: (val) => JSON.stringify(parseJsonSafe(val))
     },
     xml: {

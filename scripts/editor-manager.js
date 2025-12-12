@@ -15,6 +15,7 @@ import { css as cssLang } from '@codemirror/lang-css';
 import { markdown as markdownLang } from '@codemirror/lang-markdown';
 import { monokai } from './theme/monokaiTheme.js';
 import { showLightbox } from './lightbox.js';
+import { indentationMarkers } from '@replit/codemirror-indentation-markers';
 
 const isMobile = () => window.innerWidth <= 768;
 
