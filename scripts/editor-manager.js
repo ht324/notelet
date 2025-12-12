@@ -265,6 +265,7 @@ class CMEditorWrapper {
                 },
                 ...defaultKeymap,
                 ...historyKeymap,
+                ...foldKeymap,
                 ...searchKeymap,
                 indentWithTab
             ]),
