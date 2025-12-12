@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="多分頁 CodeMirror 編輯器，支援離線 PWA、快照歷史、模式切換與多窗/行動分頁切換。">
+    <title>Notelet</title>
+    <link rel="manifest" href="data:application/manifest+json;base64,ewogICJuYW1lIjogIlRleHQgRWRpdG9ycyIsCiAgInNob3J0X25hbWUiOiAiVGV4dCIsCiAgInN0YXJ0X3VybCI6ICIuL2luZGV4Lmh0bWwiLAogICJzY29wZSI6ICIuLyIsCiAgImRpc3BsYXkiOiAic3RhbmRhbG9uZSIsCiAgInRoZW1lX2NvbG9yIjogIiMxMTExMTEiLAogICJiYWNrZ3JvdW5kX2NvbG9yIjogIiMxMTExMTEiLAogICJpY29ucyI6IFsKICAgIHsKICAgICAgInNyYyI6ICJhc3N0ZXMvaWNvbi0xOTIucG5nIiwKICAgICAgInNpemVzIjogIjE5MngxOTIiLAogICAgICAidHlwZSI6ICJpbWFnZS9wbmciCiAgICB9LAogICAgewogICAgICAic3JjIjogImFzc3Rlcy9pY29uLTUxMi5wbmciLAogICAgICAic2l6ZXMiOiAiNTEyeDUxMiIsCiAgICAgICJ0eXBlIjogImltYWdlL3BuZyIKICAgIH0KICBdCn0K">
+    <meta name="theme-color" content="#111111">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    
+  <script type="module" crossorigin src="/assets/index-d239a671.js"></script>
+  <link rel="stylesheet" href="/assets/index-096168df.css">
+</head>
+
+<body>
+    <div id="tabs">
+        <div id="tab-list"></div>
+        <div id="tab-actions">
+            <button id="tab-add" class="tab-btn tab-action" title="Add editor"><span class="icon icon-add" aria-hidden="true"></span></button>
+            <button id="tab-load" class="tab-btn tab-action" title="Load latest"><span class="icon icon-refresh" aria-hidden="true"></span></button>
+            <button id="tab-history" class="tab-btn tab-action" title="History"><span class="icon icon-history" aria-hidden="true"></span></button>
+            <button id="tab-theme-toggle" class="tab-btn tab-action" title="切換主題"><span class="icon icon-theme-auto" aria-hidden="true"></span></button>
+        </div>
+    </div>
+    <div id="editors"></div>
+    <div id="status">
+            <div id="status-left">
+                <div id="status-text">Ln 1, Col 1</div>
+                <select id="mode-select" aria-label="Mode">
+                <option value="text/plain">text</option>
+                    <option value="application/json">json</option>
+                <option value="javascript">javascript</option>
+                    <option value="css">css</option>
+                    <option value="xml">xml</option>
+                    <option value="markdown">markdown</option>
+                </select>
+                <button id="format-pretty" class="status-action" title="格式化 (Pretty)"><span class="icon icon-format" aria-hidden="true"></span></button>
+                <button id="format-compact" class="status-action" title="壓縮 (Compact)"><span class="icon icon-compact" aria-hidden="true"></span></button>
+                <button id="wrap-toggle" class="status-action" title="自動換行"><span class="icon icon-wrap-off" aria-hidden="true"></span></button>
+            </div>
+        <div id="status-tools">
+            <button id="load-latest"><span class="icon icon-refresh" aria-hidden="true"></span>Load latest</button>
+            <button id="open-history"><span class="icon icon-history" aria-hidden="true"></span>History<span id="history-count" class="history-count"></span></button>
+            <button id="add-editor"><span class="icon icon-add" aria-hidden="true"></span>Add editor</button>
+            <button id="theme-toggle" class="theme-toggle" title="切換主題">
+                <span class="icon icon-theme-auto" aria-hidden="true"></span>
+            </button>
+        </div>
+    </div>
+    <div id="history-overlay">
+        <div id="history-modal">
+            <div id="history-header">
+                <strong>歷史紀錄<span id="history-title-count" class="history-count"></span></strong>
+                <button id="history-close" class="modal-btn">關閉</button>
+            </div>
+            <div id="history-list"></div>
+        </div>
+    </div>
+    <div id="modal-overlay">
+        <div id="modal">
+            <p id="modal-message"></p>
+            <div id="modal-actions">
+                <button id="modal-cancel" class="modal-btn">取消</button>
+                <button id="modal-ok" class="modal-btn primary">確定</button>
+            </div>
+        </div>
+    </div>
+    <div id="toast"></div>
+    <div id="selection-menu">
+        <button type="button" data-action="toggle-case">轉換大小寫</button>
+        <button type="button" data-action="decode-uri">Decode URI</button>
+        <button type="button" data-action="bbs-table">BBS 表格</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsonlint/1.6.0/jsonlint.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify.min.js" type="text/javascript" charset="utf-8"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify-css.min.js" type="text/javascript" charset="utf-8"></script>
+    
+</body>
