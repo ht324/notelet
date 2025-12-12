@@ -5,8 +5,8 @@ import { SelectionMenuController } from './selection-menu.js';
 import { registerSaveCommand, registerTimeCommands } from './editor-commands.js';
 import { EditorState, Compartment, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, highlightSpecialChars, drawSelection, highlightActiveLine, highlightActiveLineGutter, dropCursor, rectangularSelection, crosshairCursor, lineNumbers, layer, RectangleMarker, Decoration, ViewPlugin, MatchDecorator, WidgetType } from '@codemirror/view';
-import { defaultHighlightStyle, syntaxHighlighting, indentOnInput, foldGutter, foldKeymap } from '@codemirror/language';
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
+import { defaultHighlightStyle, syntaxHighlighting, indentOnInput, indentUnit, foldGutter, foldKeymap } from '@codemirror/language';
+import { defaultKeymap, history, historyKeymap } from '@codemirror/commands';
 import { searchKeymap, search, highlightSelectionMatches } from '@codemirror/search';
 import { javascript } from '@codemirror/lang-javascript';
 import { json as jsonLang } from '@codemirror/lang-json';
@@ -244,6 +244,7 @@ class CMEditorWrapper {
             history(),
             drawSelection(),
             dropCursor(),
+            indentUnit.of('\t'),
             indentOnInput(),
             syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
             highlightActiveLine(),
@@ -262,6 +263,7 @@ class CMEditorWrapper {
                 { key: 'Delete', preventDefault: true, run: () => this.deleteImageAtCursor('forward') },
                 { key: 'ArrowLeft', preventDefault: false, run: () => this.moveAcrossImage('left') },
                 { key: 'ArrowRight', preventDefault: false, run: () => this.moveAcrossImage('right') },
+                { key: 'Tab', preventDefault: true, run: () => { this.replaceSelection('\t'); return true; } },
                 {
                     key: 'Mod-Shift-\\',
                     preventDefault: true,
@@ -273,8 +275,7 @@ class CMEditorWrapper {
                 ...defaultKeymap,
                 ...historyKeymap,
                 ...foldKeymap,
-                ...searchKeymap,
-                indentWithTab
+                ...searchKeymap
             ]),
             this.customKeymapCompartment.of(keymap.of([])),
             this.modeCompartment.of(languageForMode(this.__modeId)),
