@@ -12,16 +12,11 @@
 </head>
 
 <body>
-    <div id="tabs">
-        <div id="tab-list"></div>
-        <div id="tab-actions">
-            <button id="tab-add" class="tab-btn tab-action" title="Add editor"><span class="icon icon-add" aria-hidden="true"></span></button>
-            <button id="tab-load" class="tab-btn tab-action" title="Load latest"><span class="icon icon-refresh" aria-hidden="true"></span></button>
-            <button id="tab-history" class="tab-btn tab-action" title="History"><span class="icon icon-history" aria-hidden="true"></span></button>
-            <button id="tab-theme-toggle" class="tab-btn tab-action" title="切換主題"><span class="icon icon-theme-auto" aria-hidden="true"></span></button>
+    <div id="editors">
+        <div id="tabs">
+            <div id="tab-list"></div>
         </div>
     </div>
-    <div id="editors"></div>
     <div id="status">
             <div id="status-left">
                 <div id="status-text">Ln 1, Col 1</div>
@@ -40,7 +35,8 @@
         <div id="status-tools">
             <button id="load-latest"><span class="icon icon-refresh" aria-hidden="true"></span>Load latest</button>
             <button id="open-history"><span class="icon icon-history" aria-hidden="true"></span>History<span id="history-count" class="history-count"></span></button>
-            <button id="add-editor"><span class="icon icon-add" aria-hidden="true"></span>Add editor</button>
+            <button id="add-editor-tab"><span class="icon icon-add" aria-hidden="true"></span>Add tab</button>
+            <button id="add-editor-split"><span class="icon icon-grid" aria-hidden="true"></span>Split editor</button>
             <button id="theme-toggle" class="theme-toggle" title="切換主題">
                 <span class="icon icon-theme-auto" aria-hidden="true"></span>
             </button>

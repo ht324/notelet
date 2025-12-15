@@ -31,7 +31,9 @@ body {
     background: #111;
 }
 
-#add-editor {
+#add-editor,
+#add-editor-tab,
+#add-editor-split {
     padding: 6px 10px;
     border: 1px solid #444;
     border-radius: 4px;
@@ -40,39 +42,41 @@ body {
     cursor: pointer;
 }
 
-#add-editor:hover {
+#add-editor:hover,
+#add-editor-tab:hover,
+#add-editor-split:hover {
     background: #3a3a3a;
 }
 
 #editors {
+    position: relative;
     flex: 1;
     display: flex;
     min-height: 0;
     background: #111;
 }
 
-#tabs {
+#tabs,
+#tab-list {
     display: none;
-    gap: 6px;
-    padding: calc(6px + var(--safe-top)) calc(10px + var(--safe-right)) 6px calc(10px + var(--safe-left));
-    background: #161616;
-    border-bottom: 1px solid #2c2c2c;
-    align-items: center;
-    justify-content: space-between;
 }
 
-#tab-list {
+.pane-tabs {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: #161616;
+    border-bottom: 1px solid #2c2c2c;
+    min-height: 34px;
+    box-sizing: border-box;
+}
+
+.pane-tab-list {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
     flex: 1;
-}
-
-#tab-actions {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    margin-left: 8px;
 }
 
 .tab-btn {
@@ -86,6 +90,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+    user-select: none;
 }
 
 .tab-btn.active {
@@ -142,8 +147,26 @@ body {
     justify-content: center;
 }
 
+.tab-label {
+    max-width: 220px;
+    display: inline-block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tab-drop-marker {
+    width: 2px;
+    height: 16px;
+    background: #3a6df0;
+    border-radius: 1px;
+    align-self: center;
+}
+
 .pane {
     position: relative;
+    display: flex;
+    flex-direction: column;
     flex: 1 1 0;
     min-width: 140px;
     border-right: 1px solid #222;
@@ -154,8 +177,12 @@ body {
 }
 
 .editor-host {
-    position: absolute;
-    inset: 0;
+    position: relative;
+    flex: 1 1 auto;
+}
+
+.editor-host.hidden {
+    display: none;
 }
 
 .editor-host .cm-editor {
@@ -261,6 +288,53 @@ body {
 
 .resizer:hover {
     background: #3a3a3a;
+}
+
+.pane.drop-left::after,
+.pane.drop-right::after,
+#editors.drop-left::after,
+#editors.drop-right::after,
+#editors.drop-center::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(58, 109, 240, 0.35);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.pane.drop-left::after {
+    left: 0;
+    width: 4px;
+}
+
+.pane.drop-right::after {
+    right: 0;
+    width: 4px;
+}
+
+#editors {
+    position: relative;
+}
+
+#editors.drop-left::after,
+#editors.drop-right::after {
+    width: 8px;
+    left: 0;
+    right: auto;
+}
+
+#editors.drop-right::after {
+    left: auto;
+    right: 0;
+}
+
+#editors.drop-center::after {
+    left: 0;
+    right: 0;
+    width: auto;
+    background: rgba(58, 109, 240, 0.18);
 }
 
 .pane.hidden {

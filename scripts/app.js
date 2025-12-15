@@ -63,7 +63,8 @@ const editorManager = new EditorManager({
     formatCompactBtn: $('format-compact'),
     wrapToggle: $('wrap-toggle'),
     selectionMenu: $('selection-menu'),
-    addButton: $('add-editor'),
+    addTabButton: $('add-editor-tab'),
+    addSplitButton: $('add-editor-split'),
     showToast,
     askConfirm,
     sessionStore,
@@ -122,10 +123,6 @@ $('tab-load')?.addEventListener('click', (e) => {
 $('tab-history')?.addEventListener('click', (e) => {
     e.stopPropagation();
     handleOpenHistory();
-});
-$('tab-add')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    editorManager.addEditorPane();
 });
 
 window._notelet = editorManager.buildPublicApi();
