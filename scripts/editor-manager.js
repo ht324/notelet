@@ -699,15 +699,16 @@ export class EditorManager {
         this.activeEditor = null;
         this.currentMode = modeSelect?.value || 'text/plain';
         this.editors = [];
-        this.pinnedEditors = [];
         this.draggedEditor = null;
         this.containerDropHint = null;
-        this.activePaneIndex = 0;
         this.lastContainerHint = null;
         this.dragAnchorEditor = null;
         this.tabDropTarget = null;
         this.tabDropMarker = null;
         this.pageId = generateSessionId();
+        this.activePaneId = null;
+        this.paneTree = null; // { type: 'leaf' | 'split', id?, dir?, children? }
+        this.paneDom = new Map();
         this.wrapPreference = this.loadWrapPreference();
         this.selectionController = new SelectionMenuController({
             menuEl: this.selectionMenu,
@@ -738,7 +739,8 @@ export class EditorManager {
         this.formatCompactBtn?.addEventListener('click', () => this.handleFormat('compact'));
         this.wrapToggle?.addEventListener('click', () => this.toggleWrap());
         window.addEventListener('resize', () => {
-            this.syncLayout();
+            this.updatePaneVisibility();
+            this.editors.forEach(ed => ed.refresh?.());
         });
         const bbsHotkeyHandler = (e) => {
             const isMod = e.metaKey || e.ctrlKey;
@@ -786,23 +788,167 @@ export class EditorManager {
         if (icon) icon.className = `icon ${useWrap ? 'icon-wrap-on' : 'icon-wrap-off'}`;
     }
 
+    ensureTree() {
+        if (!this.paneTree) {
+            const paneId = this.createPaneId();
+            this.paneTree = { type: 'leaf', id: paneId };
+            this.activePaneId = paneId;
+        }
+        if (!this.activePaneId) {
+            const leaf = this.getFirstLeaf(this.paneTree);
+            this.activePaneId = leaf?.id || null;
+        }
+    }
+
+    normalizeTree(node) {
+        if (!node) return null;
+        if (node.type === 'leaf') return node;
+        if (node.type === 'split') {
+            if (node.dir !== 'row' && node.dir !== 'col') node.dir = 'row';
+            const kids = Array.isArray(node.children) ? node.children : [];
+            node.children = kids.map(child => this.normalizeTree(child)).filter(Boolean);
+            if (!Array.isArray(node.sizes) || node.sizes.length !== node.children.length) {
+                const len = Math.max(1, node.children.length);
+                node.sizes = new Array(len).fill(1 / len);
+            }
+            return node;
+        }
+        return null;
+    }
+
+    getFirstLeaf(node) {
+        if (!node) return null;
+        if (node.type === 'leaf') return node;
+        for (const child of node.children || []) {
+            const found = this.getFirstLeaf(child);
+            if (found) return found;
+        }
+        return null;
+    }
+
+    findLeaf(node, paneId, parent = null, index = 0) {
+        if (!node) return null;
+        if (node.type === 'leaf' && node.id === paneId) {
+            return { node, parent, index };
+        }
+        if (node.type === 'split') {
+            for (let i = 0; i < (node.children || []).length; i++) {
+                const child = node.children[i];
+                const found = this.findLeaf(child, paneId, node, i);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    replaceChild(parent, index, nextNode) {
+        if (!parent || parent.type !== 'split') return;
+        parent.children.splice(index, 1, nextNode);
+    }
+
+    removeLeaf(paneId) {
+        if (!this.paneTree) return;
+        const info = this.findLeaf(this.paneTree, paneId);
+        if (!info) return;
+        const { parent, index } = info;
+        if (!parent) {
+            this.paneTree = null;
+            return;
+        }
+        parent.children.splice(index, 1);
+        if (parent.children.length === 1) {
+            const lone = parent.children[0];
+            const upper = this.findNodeParent(this.paneTree, parent);
+            if (!upper) {
+                this.paneTree = lone;
+            } else {
+                upper.parent.children.splice(upper.index, 1, lone);
+            }
+        }
+    }
+
+    findParent(root, target, parent = null) {
+        if (!root) return null;
+        if (root === target) return { node: target, parent };
+        if (root.type === 'split') {
+            for (const child of root.children || []) {
+                const found = this.findParent(child, target, root);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+
+    findNodeParent(root, target) {
+        if (!root || !target || root === target) return null;
+        if (root.type === 'split') {
+            for (let i = 0; i < (root.children || []).length; i++) {
+                const child = root.children[i];
+                if (child === target) {
+                    return { parent: root, index: i };
+                }
+                const deeper = this.findNodeParent(child, target);
+                if (deeper) return deeper;
+            }
+        }
+        return null;
+    }
+
+    splitPane(paneId, direction = 'right', newPaneId = null) {
+        this.ensureTree();
+        const info = this.findLeaf(this.paneTree, paneId);
+        if (!info) return null;
+        const { node, parent, index } = info;
+        const dir = (direction === 'left' || direction === 'right') ? 'col' : 'row';
+        const freshId = newPaneId || this.createPaneId();
+        const first = (direction === 'left' || direction === 'top') ? { type: 'leaf', id: freshId } : node;
+        const second = (direction === 'left' || direction === 'top') ? node : { type: 'leaf', id: freshId };
+        const splitNode = { type: 'split', dir: dir || 'row', children: [first, second], sizes: [0.5, 0.5] };
+        if (parent) {
+            parent.children[index] = splitNode;
+        } else {
+            this.paneTree = splitNode;
+        }
+        return freshId;
+    }
+
     getPaneEditors(pane) {
         return this.editors.filter(ed => ed.__pane === pane);
     }
 
-    getVisibleEditors() {
-        const panes = new Map();
-        this.editors.forEach((ed) => {
-            if (!ed.__pane) return;
-            if (!panes.has(ed.__pane)) panes.set(ed.__pane, []);
-            panes.get(ed.__pane).push(ed);
-        });
-        const visible = [];
-        panes.forEach((eds) => {
-            const pick = (this.activeEditor && eds.includes(this.activeEditor)) ? this.activeEditor : eds[0];
-            if (pick) visible.push(pick);
-        });
-        return visible;
+    getPaneList() {
+        this.ensureTree();
+        const panes = [];
+        const visit = (node) => {
+            if (!node) return;
+            if (node.type === 'leaf') {
+                const el = this.ensurePaneElement(node.id);
+                panes.push(el);
+                return;
+            }
+            (node.children || []).forEach(visit);
+        };
+        visit(this.paneTree);
+        return panes;
+    }
+
+    createPaneId() {
+        return `pane-${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 5)}`;
+    }
+
+    ensurePaneElement(paneId) {
+        if (!paneId) paneId = this.createPaneId();
+        let el = this.paneDom.get(paneId);
+        if (!el) {
+            el = document.createElement('div');
+            el.className = 'pane';
+            el.dataset.paneId = paneId;
+            el.dataset.paneId = paneId;
+            this.attachPaneChrome(el);
+            this.paneDom.set(paneId, el);
+        }
+        el.dataset.paneId = paneId;
+        return el;
     }
 
     getPrimaryEditorForPane(pane) {
@@ -819,18 +965,27 @@ export class EditorManager {
         if (host) host.remove();
         targetPane.appendChild(host);
         editorInstance.__pane = targetPane;
-        this.pinnedEditors = this.pinnedEditors.filter(ed => ed !== editorInstance);
-        this.cleanupPane(oldPane);
+        editorInstance.__paneId = targetPane.dataset.paneId;
+        const removed = this.cleanupPane(oldPane);
         this.ensurePaneTabs(targetPane);
         this.refreshPinnedEditors();
+        return removed;
     }
 
     cleanupPane(pane) {
         if (!pane) return;
         const remaining = this.getPaneEditors(pane);
-        if (remaining.length === 0 && pane.parentNode) {
-            pane.parentNode.removeChild(pane);
+        if (remaining.length === 0) {
+            if (pane.parentNode) pane.parentNode.removeChild(pane);
+            const paneId = pane.dataset.paneId;
+            this.paneDom.delete(paneId);
+            this.removeLeaf(paneId);
+            if (this.activePaneId === paneId) {
+                this.activePaneId = this.getFirstLeaf(this.paneTree)?.id || null;
+            }
+            return true;
         }
+        return false;
     }
 
     ensureEditorOwnPane(editorInstance) {
@@ -863,52 +1018,7 @@ export class EditorManager {
     }
 
     refreshPinnedEditors() {
-        const paneMap = new Map();
-        this.editors.forEach(ed => {
-            if (!ed.__pane) return;
-            const list = paneMap.get(ed.__pane) || [];
-            list.push(ed);
-            paneMap.set(ed.__pane, list);
-        });
-
-        const order = [];
-        const addPaneRep = (pane) => {
-            const group = paneMap.get(pane);
-            if (!group || !group.length) return;
-            const rep = (this.activeEditor && group.includes(this.activeEditor)) ? this.activeEditor : group[0];
-            if (!order.includes(rep)) order.push(rep);
-            paneMap.delete(pane);
-        };
-
-        this.pinnedEditors.map(ed => ed.__pane).filter(Boolean).forEach(p => addPaneRep(p));
-        Array.from(paneMap.keys()).forEach(p => addPaneRep(p));
-
-        this.pinnedEditors = order;
-        if (this.activeEditor) {
-            const idx = this.pinnedEditors.indexOf(this.activeEditor);
-            if (idx >= 0) this.activePaneIndex = idx;
-        }
-    }
-
-    pinEditor(editorInstance, position = this.pinnedEditors.length) {
-        if (!editorInstance) return;
-        const existing = this.pinnedEditors.filter(ed => this.editors.includes(ed));
-        this.pinnedEditors = existing.filter(ed => ed !== editorInstance);
-        const insertAt = Math.min(Math.max(0, position), this.pinnedEditors.length);
-        this.pinnedEditors.splice(insertAt, 0, editorInstance);
-        this.activePaneIndex = insertAt;
-        this.refreshPinnedEditors();
-        this.syncLayout();
-    }
-
-    unpinEditor(editorInstance) {
-        const next = this.pinnedEditors.filter(ed => ed !== editorInstance);
-        const changed = next.length !== this.pinnedEditors.length;
-        this.pinnedEditors = next;
-        if (this.activePaneIndex >= this.pinnedEditors.length) {
-            this.activePaneIndex = Math.max(0, this.pinnedEditors.length - 1);
-        }
-        if (changed) this.syncLayout();
+        // no-op placeholder after tree refactor
     }
 
     getEditorModeId(editorInstance = this.activeEditor) {
@@ -919,6 +1029,9 @@ export class EditorManager {
     setActiveEditor(editorInstance) {
         this.activeEditor = editorInstance;
         this.refreshPinnedEditors();
+        if (editorInstance?.__pane) {
+            this.activePaneId = editorInstance.__pane.dataset.paneId || this.activePaneId;
+        }
         const modeId = this.getEditorModeId(editorInstance);
         this.currentMode = modeId;
         if (this.modeSelect && this.modeSelect.value !== modeId) {
@@ -990,7 +1103,7 @@ export class EditorManager {
     }
 
     updateCloseButtons() {
-        const show = !isMobile() && this.getVisibleEditors().length > 1;
+        const show = !isMobile() && this.getPaneList().length > 1;
         this.editors.forEach(ed => {
             const pane = ed.__pane;
             const btn = pane?.querySelector('.pane-close');
@@ -1027,21 +1140,29 @@ export class EditorManager {
     }
 
     findTabInsertTarget(listEl, event) {
-        if (!listEl) return { editor: null, position: 'after' };
+        if (!listEl) return { editor: null, position: 'after', left: 0 };
         const tabs = Array.from(listEl.querySelectorAll('.tab-btn'));
-        if (!tabs.length) return { editor: null, position: 'after' };
+        if (!tabs.length) return { editor: null, position: 'after', left: 0 };
         const x = event.clientX;
-        for (const tab of tabs) {
+        for (let i = 0; i < tabs.length; i++) {
+            const tab = tabs[i];
             const rect = tab.getBoundingClientRect();
             const mid = rect.left + rect.width / 2;
             if (x < mid) {
+                const prevTab = tabs[i - 1];
+                if (prevTab) {
+                    const prevEditor = this.editors.find(ed => ed.__tabEl === prevTab);
+                    const left = (prevTab.offsetLeft + prevTab.offsetWidth + tab.offsetLeft) / 2;
+                    return { editor: prevEditor, position: 'after', left };
+                }
                 const editor = this.editors.find(ed => ed.__tabEl === tab);
-                return { editor, position: 'before' };
+                return { editor, position: 'before', left: tab.offsetLeft };
             }
         }
         const lastTab = tabs[tabs.length - 1];
         const editor = this.editors.find(ed => ed.__tabEl === lastTab);
-        return { editor, position: 'after' };
+        const left = lastTab.offsetLeft + lastTab.offsetWidth;
+        return { editor, position: 'after', left };
     }
 
     ensureTabDropMarker() {
@@ -1053,20 +1174,13 @@ export class EditorManager {
         return this.tabDropMarker;
     }
 
-    setTabDropHint(tabEl, position, listEl = null) {
+    setTabDropHint(tabEl, position, listEl = null, absoluteLeft = null) {
         const parent = (tabEl && tabEl.parentNode) || listEl;
         if (!parent) return;
         const marker = this.ensureTabDropMarker();
-        marker.remove();
-        if (tabEl) {
-            if (position === 'before') {
-                parent.insertBefore(marker, tabEl);
-            } else {
-                parent.insertBefore(marker, tabEl.nextSibling);
-            }
-        } else {
-            parent.appendChild(marker);
-        }
+        if (!marker.parentNode) parent.appendChild(marker);
+        const baseLeft = absoluteLeft !== null ? absoluteLeft : (tabEl ? (position === 'before' ? tabEl.offsetLeft : tabEl.offsetLeft + tabEl.offsetWidth) : parent.scrollWidth);
+        marker.style.left = `${baseLeft}px`;
         this.tabDropTarget = this.tabDropTarget || {};
     }
 
@@ -1129,16 +1243,19 @@ export class EditorManager {
 
     updatePaneVisibility() {
         const mobile = isMobile();
-        const visibleSet = new Set(this.getVisibleEditors());
-        const panes = new Set(this.editors.map(ed => ed.__pane).filter(Boolean));
+        const panes = new Set(this.getPaneList());
         panes.forEach((pane) => {
             const editorsInPane = this.getPaneEditors(pane);
             const activeInPane = editorsInPane.find(ed => ed === this.activeEditor) || editorsInPane[0];
+            if (!activeInPane) {
+                pane.classList.add('hidden');
+                return;
+            }
             editorsInPane.forEach((ed) => {
                 const host = ed.__host;
                 if (host) host.classList.toggle('hidden', ed !== activeInPane);
             });
-            const shouldShowPane = mobile ? activeInPane === this.activeEditor : visibleSet.has(activeInPane);
+            const shouldShowPane = mobile ? activeInPane === this.activeEditor : true;
             pane.classList.toggle('hidden', !shouldShowPane);
         });
     }
@@ -1146,40 +1263,53 @@ export class EditorManager {
     syncLayout(force = false) {
         if (this.draggedEditor && !force) return;
         this.refreshPinnedEditors();
-        const panes = this.getVisibleEditors().map(ed => ed.__pane).filter(Boolean);
+        const panes = this.getPaneList();
         this.layoutPanes(panes);
     }
 
-    layoutPanes(panes) {
+    layoutPanes() {
         if (!this.container) return;
-        const mobile = isMobile();
-        const resizerCount = Math.max(0, panes.length - 1);
-        const width = this.container.clientWidth || this.container.getBoundingClientRect().width;
-        const available = Math.max(0, width - resizerCount * RESIZER_WIDTH);
-        const basis = panes.length ? available / panes.length : 0;
-        if (this.tabs && this.tabs.parentNode) {
-            this.tabs.parentNode.removeChild(this.tabs);
-        }
-        Array.from(this.container.querySelectorAll('.pane, .resizer')).forEach(el => el.remove());
-        panes.forEach((pane, index) => {
-            if (mobile) {
-                pane.style.flex = '1 1 auto';
-                pane.style.width = '100%';
-                this.container.appendChild(pane);
-            } else {
-                if (basis > 0) {
-                    pane.style.flex = `0 0 ${basis}px`;
-                } else {
-                    pane.style.flex = '1 1 0';
-                }
-                this.container.appendChild(pane);
-                if (index < panes.length - 1) {
-                    const resizer = this.makeResizer(pane, panes[index + 1]);
-                    this.container.appendChild(resizer);
-                }
+        this.container.innerHTML = '';
+        this.ensureTree();
+        const renderNode = (node, parent) => {
+            if (!node) return;
+            if (node.type === 'leaf') {
+                const pane = this.ensurePaneElement(node.id);
+                pane.style.flex = '1 1 0';
+                parent.appendChild(pane);
+                return pane;
             }
-        });
-        this.updateCloseButtons();
+            if (node.type === 'split') {
+                const wrap = document.createElement('div');
+                wrap.className = `split-${node.dir === 'row' ? 'row' : 'col'}`;
+                wrap.style.display = 'flex';
+                wrap.style.flexDirection = node.dir === 'row' ? 'column' : 'row';
+                wrap.style.flex = '1 1 0';
+                parent.appendChild(wrap);
+                const children = node.children || [];
+                const sizes = (node.sizes && node.sizes.length === children.length) ? node.sizes.slice() : new Array(children.length).fill(1 / Math.max(1, children.length));
+                const rendered = children.map((child, idx) => {
+                    const el = renderNode(child, wrap);
+                    if (el) {
+                        el.style.flexGrow = sizes[idx];
+                        el.style.flexShrink = 1;
+                        el.style.flexBasis = '0px';
+                    }
+                    return el;
+                });
+                rendered.forEach((childEl, idx) => {
+                    if (!childEl) return;
+                    if (idx > 0) {
+                        const prevEl = rendered[idx - 1];
+                        const resizer = this.makeResizerFlexible(node, idx - 1, prevEl, childEl);
+                        wrap.insertBefore(resizer, childEl);
+                    }
+                });
+                return wrap;
+            }
+            return null;
+        };
+        renderNode(this.paneTree, this.container);
         this.updatePaneVisibility();
         this.renderTabs();
         this.editors.forEach(ed => ed.refresh?.());
@@ -1189,8 +1319,11 @@ export class EditorManager {
         const rect = element?.getBoundingClientRect?.();
         if (!rect) return 'center';
         const ratio = (event.clientX - rect.left) / Math.max(rect.width, 1);
-        if (ratio < 0.35) return 'left';
-        if (ratio > 0.65) return 'right';
+        const vr = (event.clientY - rect.top) / Math.max(rect.height, 1);
+        if (ratio < 0.25) return 'left';
+        if (ratio > 0.75) return 'right';
+        if (vr < 0.25) return 'top';
+        if (vr > 0.75) return 'bottom';
         return 'center';
     }
 
@@ -1198,7 +1331,7 @@ export class EditorManager {
         this.containerDropHint = direction;
         this.lastContainerHint = direction;
         if (!this.container) return;
-        this.container.classList.remove('drop-left', 'drop-right', 'drop-center');
+        this.container.classList.remove('drop-left', 'drop-right', 'drop-center', 'drop-top', 'drop-bottom');
         if (direction) {
             this.container.classList.add(`drop-${direction}`);
         }
@@ -1206,7 +1339,7 @@ export class EditorManager {
 
     clearPaneHints() {
         Array.from(this.container?.querySelectorAll?.('.pane') || []).forEach(p => {
-            p.classList.remove('drop-left', 'drop-right', 'drop-center');
+            p.classList.remove('drop-left', 'drop-right', 'drop-center', 'drop-top', 'drop-bottom');
             p.__lastDropDir = null;
         });
     }
@@ -1215,7 +1348,7 @@ export class EditorManager {
         if (!pane) return;
         this.clearPaneHints();
         this.setContainerDropHint(null);
-        pane.classList.remove('drop-left', 'drop-right', 'drop-center');
+        pane.classList.remove('drop-left', 'drop-right', 'drop-center', 'drop-top', 'drop-bottom');
         if (direction) {
             pane.classList.add(`drop-${direction}`);
         }
@@ -1293,9 +1426,10 @@ export class EditorManager {
         const tabEl = targetEditor.__tabEl;
         if (!tabEl) return;
         const side = this.getTabSide(event, tabEl);
-        this.setTabDropHint(tabEl, side);
         const listEl = tabEl.parentNode;
-        this.tabDropTarget = { editor: targetEditor, pane: targetEditor.__pane, position: side, listEl };
+        const { left } = this.findTabInsertTarget(listEl, event);
+        this.setTabDropHint(tabEl, side, listEl, left);
+        this.tabDropTarget = { editor: targetEditor, pane: targetEditor.__pane, position: side, listEl, left };
     }
 
     handleTabDropOnTarget(targetEditor, event) {
@@ -1305,13 +1439,23 @@ export class EditorManager {
         const tabEl = targetEditor.__tabEl;
         const side = tabEl ? this.getTabSide(event, tabEl) : 'after';
         const targetPane = targetEditor.__pane;
+        let treeChanged = false;
         if (targetPane && targetPane !== this.draggedEditor.__pane) {
-            this.moveEditorToPane(this.draggedEditor, targetPane);
+            const removed = this.moveEditorToPane(this.draggedEditor, targetPane);
+            treeChanged = treeChanged || removed;
         }
         this.reorderEditorsForTabDrop(this.draggedEditor, targetEditor, side, targetPane);
         this.clearTabDropHint();
         this.setActiveEditor(this.draggedEditor);
-        this.syncLayout(true);
+        if (treeChanged) {
+            this.syncLayout(true);
+            this.persistPage();
+        } else {
+            this.updatePaneVisibility();
+            this.renderTabs();
+            this.editors.forEach(ed => ed.refresh?.());
+            this.persistPage();
+        }
         this.draggedEditor = null;
         this.dragAnchorEditor = null;
         this.clearDropIndicators();
@@ -1322,10 +1466,10 @@ export class EditorManager {
         event.preventDefault();
         event.stopPropagation();
         const list = tabsEl.querySelector('.pane-tab-list');
-        const { editor: targetEditor, position } = this.findTabInsertTarget(list, event);
-        this.tabDropTarget = { editor: targetEditor, pane, position: position || 'after', listEl: list };
+        const { editor: targetEditor, position, left } = this.findTabInsertTarget(list, event);
+        this.tabDropTarget = { editor: targetEditor, pane, position: position || 'after', listEl: list, left };
         const tabEl = targetEditor?.__tabEl;
-        this.setTabDropHint(tabEl, position || 'after', list);
+        this.setTabDropHint(tabEl, position || 'after', list, left);
     }
 
     handleTabsAreaDrop(pane, tabsEl, event) {
@@ -1335,15 +1479,25 @@ export class EditorManager {
         const list = tabsEl.querySelector('.pane-tab-list');
         const { editor: targetEditor, position } = this.tabDropTarget || this.findTabInsertTarget(list, event);
         const targetPane = pane;
+        let treeChanged = false;
         if (targetPane && targetPane !== this.draggedEditor.__pane) {
-            this.moveEditorToPane(this.draggedEditor, targetPane);
+            const removed = this.moveEditorToPane(this.draggedEditor, targetPane);
+            treeChanged = treeChanged || removed;
         }
         const targetEd = targetEditor || this.getPrimaryEditorForPane(targetPane) || this.draggedEditor;
         const pos = position || 'after';
         this.reorderEditorsForTabDrop(this.draggedEditor, targetEd, pos, targetPane);
         this.clearTabDropHint();
         this.setActiveEditor(this.draggedEditor);
-        this.syncLayout(true);
+        if (treeChanged) {
+            this.syncLayout(true);
+            this.persistPage();
+        } else {
+            this.updatePaneVisibility();
+            this.renderTabs();
+            this.editors.forEach(ed => ed.refresh?.());
+            this.persistPage();
+        }
         this.draggedEditor = null;
         this.dragAnchorEditor = null;
         this.clearDropIndicators();
@@ -1357,28 +1511,33 @@ export class EditorManager {
             const fallback = (this.dragAnchorEditor && this.dragAnchorEditor !== editor) ? this.dragAnchorEditor : this.editors.find(ed => ed !== editor) || null;
             ref = fallback || editor;
         }
-        if (direction === 'center' && ref && ref.__pane && ref.__pane !== editor.__pane) {
-            this.moveEditorToPane(editor, ref.__pane);
+        let treeChanged = false;
+        const targetPane = ref?.__pane || this.activeEditor?.__pane;
+        if (direction === 'center' && targetPane && targetPane !== editor.__pane) {
+            const removed = this.moveEditorToPane(editor, targetPane);
+            treeChanged = treeChanged || removed;
+            this.activePaneId = targetPane.dataset.paneId || this.activePaneId;
         } else if (direction === 'center') {
-            this.pinnedEditors = [];
-            this.activePaneIndex = 0;
+            // no split, keep within pane
         } else {
-            this.ensureEditorOwnPane(editor);
-            const ordered = this.pinnedEditors.filter(ed => this.editors.includes(ed));
-            const refTarget = ref || this.activeEditor || ordered[0] || null;
-            if (refTarget && !ordered.includes(refTarget)) {
-                ordered.push(refTarget);
-            }
-            const withoutDragged = ordered.filter(ed => ed !== editor);
-            const refIndex = refTarget ? withoutDragged.indexOf(refTarget) : withoutDragged.length;
-            const insertAt = direction === 'left' ? Math.max(0, refIndex) : Math.max(0, refIndex + 1);
-            withoutDragged.splice(Math.min(insertAt, withoutDragged.length), 0, editor);
-            this.pinnedEditors = withoutDragged;
-            this.activePaneIndex = Math.max(0, this.pinnedEditors.indexOf(editor));
+            const dir = direction === 'left' || direction === 'right' ? direction : (direction === 'top' ? 'top' : 'bottom');
+            const paneId = targetPane?.dataset?.paneId || this.activePaneId || this.getFirstLeaf(this.paneTree)?.id;
+            const newPaneId = this.splitPane(paneId, dir) || this.createPaneId();
+            const newPaneEl = this.ensurePaneElement(newPaneId);
+            const removed = this.moveEditorToPane(editor, newPaneEl);
+            treeChanged = true;
+            this.activePaneId = newPaneId;
         }
-        this.refreshPinnedEditors();
         this.setActiveEditor(editor);
-        this.syncLayout(true);
+        if (treeChanged) {
+            this.syncLayout(true);
+            this.persistPage();
+        } else {
+            this.updatePaneVisibility();
+            this.renderTabs();
+            this.editors.forEach(ed => ed.refresh?.());
+            this.persistPage();
+        }
         this.draggedEditor = null;
         this.dragAnchorEditor = null;
         this.clearDropIndicators();
@@ -1402,33 +1561,72 @@ export class EditorManager {
         this.editors.splice(Math.max(0, insertAt), 0, editor);
     }
 
-    makeResizer(leftPane, rightPane) {
+    makeResizerFlexible(node, idx, prevEl, nextEl) {
+        const dir = node.dir === 'row' ? 'row' : 'col';
         const resizer = document.createElement('div');
-        resizer.className = 'resizer';
+        resizer.className = `resizer ${dir === 'row' ? 'resizer-row' : 'resizer-col'}`;
         let startX = 0;
-        let leftStart = 0;
-        let rightStart = 0;
+        let startY = 0;
+        let prevStart = 0;
+        let nextStart = 0;
 
         const onMouseMove = (e) => {
-            const dx = e.clientX - startX;
-            const total = leftStart + rightStart;
-            let newLeft = leftStart + dx;
-            newLeft = Math.max(80, Math.min(total - 80, newLeft));
-            const newRight = total - newLeft;
-            leftPane.style.flex = `0 0 ${newLeft}px`;
-            rightPane.style.flex = `0 0 ${newRight}px`;
+            if (dir === 'col') {
+                const dx = e.clientX - startX;
+                const total = prevStart + nextStart;
+                let newPrev = prevStart + dx;
+                newPrev = Math.max(80, Math.min(total - 80, newPrev));
+                const newNext = Math.max(80, total - newPrev);
+                const ratioPrev = newPrev / (newPrev + newNext);
+                const ratioNext = nextEl ? newNext / (newPrev + newNext) : 0;
+                prevEl.style.flexGrow = ratioPrev;
+                prevEl.style.flexBasis = '0px';
+                if (nextEl) {
+                    nextEl.style.flexGrow = ratioNext;
+                    nextEl.style.flexBasis = '0px';
+                }
+                if (!node.sizes) node.sizes = new Array((node.children || []).length).fill(1 / Math.max(1, (node.children || []).length));
+                node.sizes[idx] = ratioPrev;
+                if (node.sizes[idx + 1] !== undefined) node.sizes[idx + 1] = ratioNext;
+            } else {
+                const dy = e.clientY - startY;
+                const total = prevStart + nextStart;
+                let newPrev = prevStart + dy;
+                newPrev = Math.max(80, Math.min(total - 80, newPrev));
+                const newNext = Math.max(80, total - newPrev);
+                const ratioPrev = newPrev / (newPrev + newNext);
+                const ratioNext = nextEl ? newNext / (newPrev + newNext) : 0;
+                prevEl.style.flexGrow = ratioPrev;
+                prevEl.style.flexBasis = '0px';
+                if (nextEl) {
+                    nextEl.style.flexGrow = ratioNext;
+                    nextEl.style.flexBasis = '0px';
+                }
+                if (!node.sizes) node.sizes = new Array((node.children || []).length).fill(1 / Math.max(1, (node.children || []).length));
+                node.sizes[idx] = ratioPrev;
+                if (node.sizes[idx + 1] !== undefined) node.sizes[idx + 1] = ratioNext;
+            }
         };
 
         const onMouseUp = () => {
             document.removeEventListener('mousemove', onMouseMove);
             document.removeEventListener('mouseup', onMouseUp);
             document.body.style.userSelect = '';
+            this.persistPage();
         };
 
         resizer.addEventListener('mousedown', (e) => {
             startX = e.clientX;
-            leftStart = leftPane.getBoundingClientRect().width;
-            rightStart = rightPane.getBoundingClientRect().width;
+            startY = e.clientY;
+            if (dir === 'col') {
+                prevStart = prevEl.getBoundingClientRect().width;
+                nextStart = nextEl?.getBoundingClientRect().width || prevStart;
+                resizer.style.height = '100%';
+            } else {
+                prevStart = prevEl.getBoundingClientRect().height;
+                nextStart = nextEl?.getBoundingClientRect().height || prevStart;
+                resizer.style.width = '100%';
+            }
             document.addEventListener('mousemove', onMouseMove);
             document.addEventListener('mouseup', onMouseUp);
             document.body.style.userSelect = 'none';
@@ -1438,21 +1636,20 @@ export class EditorManager {
     }
 
     removePane(_pane, editorInstance) {
-        this.pinnedEditors = this.pinnedEditors.filter(ed => ed !== editorInstance);
-        if (this.activePaneIndex >= this.pinnedEditors.length) {
-            this.activePaneIndex = Math.max(0, this.pinnedEditors.length - 1);
-        }
         const pane = editorInstance.__pane;
         const host = editorInstance.__host;
         if (host && host.parentNode) host.parentNode.removeChild(host);
         this.editors = this.editors.filter(ed => ed !== editorInstance);
         const remainingInPane = pane ? this.getPaneEditors(pane) : [];
-        if (remainingInPane.length === 0 && pane && pane.parentNode) {
-            pane.parentNode.removeChild(pane);
+        if (remainingInPane.length === 0 && pane) {
+            if (pane.parentNode) pane.parentNode.removeChild(pane);
+            const paneId = pane.dataset.paneId;
+            this.paneDom.delete(paneId);
+            this.removeLeaf(paneId);
         }
         this.refreshPinnedEditors();
         if (this.activeEditor === editorInstance) {
-            const nextEditor = remainingInPane[0] || this.pinnedEditors[0] || this.editors[0] || null;
+            const nextEditor = remainingInPane[0] || this.editors[0] || null;
             this.activeEditor = null;
             if (nextEditor) {
                 this.setActiveEditor(nextEditor);
@@ -1488,9 +1685,10 @@ export class EditorManager {
         }
     }
 
-    createPane(images = [], reusePane = null) {
-        const pane = reusePane || document.createElement('div');
-        this.attachPaneChrome(pane);
+    createPane(images = [], paneId = null) {
+        this.ensureTree();
+        const targetId = paneId || this.activePaneId || this.createPaneId();
+        const pane = this.ensurePaneElement(targetId);
 
         const editorEl = document.createElement('div');
         editorEl.className = 'editor-host';
@@ -1528,6 +1726,7 @@ export class EditorManager {
         editorInstance.__sessionId = generateSessionId();
         editorInstance.__suppressPersist = false;
         editorInstance.__pane = pane;
+        editorInstance.__paneId = pane.dataset.paneId || this.createPaneId();
         editorInstance.__host = editorEl;
         this.selectionController.attachToEditor(editorInstance);
 
@@ -1542,18 +1741,18 @@ export class EditorManager {
         initialWrap = this.wrapPreference,
         images = [],
         asSplit = false,
-        reusePane = true
+        reusePane = true,
+        splitDirection = 'right',
+        targetPaneId = null
     } = {}) {
-        const targetPane = (!asSplit && reusePane && this.activeEditor?.__pane) ? this.activeEditor.__pane : null;
-        const { pane, editorInstance } = this.createPane(images, targetPane);
-        this.editors.push(editorInstance);
-        if (asSplit) {
-            if (this.activeEditor && !this.pinnedEditors.includes(this.activeEditor)) {
-                this.pinnedEditors.push(this.activeEditor);
-            }
-            this.pinEditor(editorInstance, this.pinnedEditors.length);
+        this.ensureTree();
+        let paneId = targetPaneId || this.activePaneId;
+        if (asSplit || !paneId) {
+            paneId = this.splitPane(this.activePaneId || this.getFirstLeaf(this.paneTree)?.id, splitDirection) || paneId || this.createPaneId();
+            this.activePaneId = paneId;
         }
-        this.refreshPinnedEditors();
+        const { pane, editorInstance } = this.createPane(images, paneId);
+        this.editors.push(editorInstance);
 
         editorInstance.setMode(initialMode || this.currentMode);
         editorInstance.setOption('lineWrapping', !!initialWrap);
@@ -1587,18 +1786,20 @@ export class EditorManager {
     }
 
     getSnapshot() {
+        this.ensureTree();
         return {
             id: this.pageId,
             layout: {
-                pinned: this.pinnedEditors.map(ed => ed.__sessionId),
+                tree: this.paneTree,
                 activeId: this.activeEditor?.__sessionId || null,
-                activePaneIndex: this.activePaneIndex
+                activePaneId: this.activePaneId
             },
             editors: this.editors.map(ed => ({
                 id: ed.__sessionId,
                 content: ed.getValue(),
                 mode: this.getEditorModeId(ed),
                 wrap: ed.getOption('lineWrapping'),
+                paneId: ed.__pane?.dataset?.paneId,
                 images: ed.imageStore ? Array.from(ed.imageStore.entries()).map(([id, data]) => ({
                     id,
                     data,
@@ -1616,9 +1817,18 @@ export class EditorManager {
         }
         if (replace) {
             this.editors = [];
-            this.pinnedEditors = [];
             this.container.innerHTML = '';
             this.activeEditor = null;
+            this.paneDom.clear();
+            this.paneTree = null;
+        }
+        const layout = snapshot.layout || {};
+        if (layout.tree) {
+            this.paneTree = this.normalizeTree(layout.tree);
+        } else if (!this.paneTree) {
+            const baseId = editorsData[0]?.paneId || this.createPaneId();
+            this.paneTree = { type: 'leaf', id: baseId };
+            editorsData = editorsData.map(ed => ({ ...ed, paneId: ed.paneId || baseId }));
         }
         editorsData.forEach(ed => {
             const instance = this.addEditorPane({
@@ -1628,21 +1838,14 @@ export class EditorManager {
                 initialWrap: ed.wrap !== undefined ? ed.wrap : this.wrapPreference,
                 images: ed.images || [],
                 asSplit: false,
-                reusePane: !replace
+                reusePane: !replace,
+                targetPaneId: ed.paneId
             });
             if (instance && ed.id) {
                 instance.__sessionId = ed.id;
             }
         });
-        const layout = snapshot.layout || {};
-        if (Array.isArray(layout.pinned)) {
-            this.pinnedEditors = layout.pinned.map(id => this.editors.find(ed => ed.__sessionId === id)).filter(Boolean);
-        }
-        if (typeof layout.activePaneIndex === 'number') {
-            this.activePaneIndex = Math.max(0, Math.min(layout.activePaneIndex, Math.max(0, this.pinnedEditors.length - 1)));
-        } else {
-            this.activePaneIndex = 0;
-        }
+        this.activePaneId = layout.activePaneId || this.activePaneId || this.getFirstLeaf(this.paneTree)?.id || null;
         const preferred = layout.activeId ? this.editors.find(ed => ed.__sessionId === layout.activeId) : null;
         const nextActive = preferred || this.editors[this.editors.length - 1];
         if (nextActive) this.setActiveEditor(nextActive);

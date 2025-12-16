@@ -72,11 +72,26 @@ body {
     box-sizing: border-box;
 }
 
+.split-col {
+    display: flex;
+    flex-direction: row;
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.split-row {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
 .pane-tab-list {
     display: flex;
     gap: 6px;
     flex-wrap: wrap;
     flex: 1;
+    position: relative;
 }
 
 .tab-btn {
@@ -135,11 +150,14 @@ body {
 }
 
 .tab-drop-marker {
+    position: absolute;
     width: 2px;
-    height: 16px;
+    height: calc(100% - 6px);
     background: #3a6df0;
-    border-radius: 1px;
-    align-self: center;
+    border-radius: 3px;
+    top: 3px;
+    pointer-events: none;
+    z-index: 2;
 }
 
 .pane {
@@ -257,40 +275,63 @@ body {
 
 .resizer {
     box-sizing: border-box;
-    width: 6px;
-    flex: 0 0 6px;
-    cursor: col-resize;
     background: #2a2a2a;
-    border-left: 1px solid #1b1b1b;
-    border-right: 1px solid #1b1b1b;
 }
 
 .resizer:hover {
     background: #3a3a3a;
 }
 
+.resizer-col {
+    width: 6px;
+    flex: 0 0 6px;
+    cursor: col-resize;
+    border-left: 1px solid #1b1b1b;
+    border-right: 1px solid #1b1b1b;
+}
+
+.resizer-row {
+    height: 6px;
+    flex: 0 0 6px;
+    cursor: row-resize;
+    border-top: 1px solid #1b1b1b;
+    border-bottom: 1px solid #1b1b1b;
+}
+
 .pane.drop-left::after,
 .pane.drop-right::after,
+#editors.drop-top::after,
+#editors.drop-bottom::after,
+.pane.drop-top::after,
+.pane.drop-bottom::after,
 #editors.drop-left::after,
 #editors.drop-right::after,
 #editors.drop-center::after {
     content: '';
     position: absolute;
     top: 0;
+    left: 0;
+    right: 0;
     bottom: 0;
-    background: rgba(58, 109, 240, 0.35);
+    background: rgba(58, 109, 240, 0.22);
     pointer-events: none;
     z-index: 3;
 }
 
 .pane.drop-left::after {
-    left: 0;
-    width: 4px;
+    right: 50%;
 }
 
 .pane.drop-right::after {
-    right: 0;
-    width: 4px;
+    left: 50%;
+}
+
+.pane.drop-top::after {
+    bottom: 50%;
+}
+
+.pane.drop-bottom::after {
+    top: 50%;
 }
 
 #editors {
@@ -305,8 +346,15 @@ body {
 }
 
 #editors.drop-right::after {
-    left: auto;
-    right: 0;
+    left: 50%;
+}
+
+#editors.drop-top::after {
+    bottom: 50%;
+}
+
+#editors.drop-bottom::after {
+    top: 50%;
 }
 
 #editors.drop-center::after {
