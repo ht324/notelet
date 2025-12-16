@@ -1480,30 +1480,12 @@ export class EditorManager {
     attachPaneChrome(pane) {
         if (!pane) return;
         if (!pane.classList.contains('pane')) pane.classList.add('pane');
-        let closeBtn = pane.querySelector('.pane-close');
-        if (!closeBtn) {
-            closeBtn = document.createElement('button');
-            closeBtn.className = 'pane-close';
-            closeBtn.textContent = '×';
-            pane.appendChild(closeBtn);
-        }
-        if (!pane.__closeAttached) {
-            closeBtn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const target = this.getPrimaryEditorForPane(pane);
-                const ok = await this.askConfirm('要關閉這個編輯器嗎？');
-                if (!ok || !target) return;
-                this.removePane(pane, target);
-            });
-            pane.__closeAttached = true;
-        }
         if (!pane.__dragListenersAttached) {
             pane.addEventListener('dragover', (e) => this.handlePaneDragOver(pane, e));
             pane.addEventListener('drop', (e) => this.handlePaneDrop(pane, e));
             pane.addEventListener('dragleave', () => this.clearDropIndicators());
             pane.__dragListenersAttached = true;
         }
-        return closeBtn;
     }
 
     createPane(images = [], reusePane = null) {
