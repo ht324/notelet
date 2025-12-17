@@ -1,9 +1,33 @@
 import { simplifyMode, isFormatSupported } from './utils/editor-utils.js';
 
+import * as jsonlintModule from '@prantlf/jsonlint';
+import * as beautifyModule from 'js-beautify';
+
+const pickFunction = (...candidates) => candidates.find((candidate) => typeof candidate === 'function');
+
+const globalWindow = typeof window === 'undefined' ? undefined : window;
+
+const jsonlintParse = pickFunction(
+    jsonlintModule?.parse,
+    jsonlintModule?.default?.parse,
+    jsonlintModule?.default
+);
+
+const jsBeautify = pickFunction(
+    beautifyModule?.js_beautify,
+    beautifyModule?.default?.js_beautify,
+    globalWindow?.js_beautify
+);
+
+const cssBeautify = pickFunction(
+    beautifyModule?.css_beautify,
+    beautifyModule?.default?.css_beautify,
+    globalWindow?.css_beautify
+);
+
 const parseJsonSafe = (val) => {
-    if (window.jsonlint && typeof jsonlint.parse === 'function') {
-        return jsonlint.parse(val);
-    }
+    if (jsonlintParse) return jsonlintParse(val);
+    if (globalWindow?.jsonlint && typeof jsonlint.parse === 'function') return jsonlint.parse(val);
     return JSON.parse(val);
 };
 
@@ -45,21 +69,21 @@ const formatters = {
     },
     javascript: {
         pretty: (val) => {
-            if (window.js_beautify) return js_beautify(val, { indent_size: 2 });
+            if (jsBeautify) return jsBeautify(val, { indent_size: 2 });
             return val;
         },
         compact: (val) => {
-            if (window.js_beautify) return js_beautify(val, { indent_size: 0, preserve_newlines: false });
+            if (jsBeautify) return jsBeautify(val, { indent_size: 0, preserve_newlines: false });
             return val.replace(/\s+/g, ' ').trim();
         }
     },
     css: {
         pretty: (val) => {
-            if (window.css_beautify) return css_beautify(val, { indent_size: 2 });
+            if (cssBeautify) return cssBeautify(val, { indent_size: 2 });
             return val;
         },
         compact: (val) => {
-            if (window.css_beautify) return css_beautify(val, { indent_size: 0, preserve_newlines: false });
+            if (cssBeautify) return cssBeautify(val, { indent_size: 0, preserve_newlines: false });
             return val.replace(/\s+/g, ' ').trim();
         }
     },

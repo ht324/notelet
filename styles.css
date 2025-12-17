@@ -40,13 +40,13 @@ body {
     background: #2d2d2d;
     color: #f5f5f5;
     cursor: pointer;
-} */
+}
 
 #add-editor:hover,
 #add-editor-tab:hover,
 #add-editor-split:hover {
     background: #3a3a3a;
-}
+} */
 
 #editors {
     position: relative;
@@ -382,11 +382,17 @@ body {
 #status {
     box-sizing: border-box;
     min-height: 36px;
-    padding: 0 calc(12px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(12px + var(--safe-left));
+    /* padding: 0 calc(12px + var(--safe-right)) calc(8px + var(--safe-bottom)) calc(12px + var(--safe-left)); */
+    padding: 8px calc(12px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(12px + var(--safe-left));
     display: flex;
     align-items: center;
     justify-content: flex-start;
     gap: 12px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
     font-family: Arial, sans-serif;
     font-size: 11px;
     background: linear-gradient(180deg, #1f1f1f 0%, #161616 100%);
@@ -406,7 +412,8 @@ body {
     align-items: center;
     gap: 10px;
     color: #b8bcc3;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .status-action,
@@ -742,11 +749,13 @@ body {
         height: auto;
         gap: 8px;
         padding: 8px calc(12px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(12px + var(--safe-left));
+        overflow-x: visible;
     }
 
     #status-left {
         width: 100%;
         flex-wrap: wrap;
+        white-space: normal;
         justify-content: flex-start;
     }
 

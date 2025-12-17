@@ -1,4 +1,4 @@
-const CACHE_NAME = 'notelet-cache-v5';
+const CACHE_NAME = 'notelet-cache-v6';
 const ASSETS = [
   './',
   './index.html',
@@ -6,10 +6,7 @@ const ASSETS = [
   './manifest.webmanifest',
   './favicon.svg',
   './asstes/icon-192.png',
-  './asstes/icon-512.png',
-  'https://cdnjs.cloudflare.com/ajax/libs/jsonlint/1.6.0/jsonlint.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/js-beautify/1.14.9/beautify-css.min.js'
+  './asstes/icon-512.png'
 ];
 
 self.addEventListener('install', (event) => {
