@@ -1,7 +1,9 @@
+import { createPopper } from '@popperjs/core';
 import { SessionStore } from './session-store.js';
 import { ThemeController } from './theme.js';
 import { HistoryModal } from './history-modal.js';
 import { EditorManager } from './editor-manager.js';
+import { MAX_SESSIONS } from './constants.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -39,6 +41,7 @@ const askConfirm = (message) => new Promise((resolve) => {
 });
 
 const sessionStore = new SessionStore();
+const historyButton = $('open-history');
 const historyModal = new HistoryModal({
     overlay: $('history-overlay'),
     listEl: $('history-list'),
@@ -68,9 +71,21 @@ const editorManager = new EditorManager({
     showToast,
     askConfirm,
     sessionStore,
-    setHistoryCount: (count) => historyModal.setCount(count),
+    setHistoryCount: (count) => {
+        historyModal.setCount(count);
+        setHistoryTooltip(count);
+    },
     themeController
 });
+
+const setHistoryTooltip = (count = 0) => {
+    const text = `歷史紀錄 (${count}/${MAX_SESSIONS})`;
+    if (historyButton) {
+        historyButton.dataset.tooltip = text;
+        historyButton.setAttribute('aria-label', text);
+    }
+};
+setHistoryTooltip(0);
 
 themeController.setEditorsGetter(() => editorManager.getEditors());
 themeController.apply(themeController.preference, { skipPersist: true });
@@ -114,6 +129,65 @@ const handleOpenHistory = async () => {
     });
 };
 
+const setupStatusTooltips = () => {
+    const buttons = Array.from(document.querySelectorAll('.status-tool-btn[data-tooltip]'));
+    if (!buttons.length) return;
+
+    const tooltip = document.createElement('div');
+    tooltip.className = 'status-tooltip';
+    tooltip.setAttribute('role', 'tooltip');
+    tooltip.setAttribute('aria-hidden', 'true');
+
+    const content = document.createElement('div');
+    content.className = 'tooltip-content';
+    tooltip.appendChild(content);
+
+    const arrow = document.createElement('div');
+    arrow.className = 'tooltip-arrow';
+    arrow.setAttribute('data-popper-arrow', '');
+    tooltip.appendChild(arrow);
+
+    document.body.appendChild(tooltip);
+
+    let instance = null;
+    let hideTimer = null;
+
+    const show = (target) => {
+        clearTimeout(hideTimer);
+        const label = target.dataset.tooltip || target.getAttribute('aria-label') || '';
+        if (!label) return;
+        content.textContent = label;
+        tooltip.setAttribute('data-show', '');
+        tooltip.setAttribute('aria-hidden', 'false');
+        instance?.destroy();
+        instance = createPopper(target, tooltip, {
+            placement: 'top',
+            modifiers: [
+                { name: 'offset', options: { offset: [0, 4] } },
+                { name: 'preventOverflow', options: { padding: 8 } }
+            ]
+        });
+    };
+
+    const hide = () => {
+        hideTimer = setTimeout(() => {
+            tooltip.removeAttribute('data-show');
+            tooltip.setAttribute('aria-hidden', 'true');
+            if (instance) {
+                instance.destroy();
+                instance = null;
+            }
+        }, 60);
+    };
+
+    buttons.forEach((btn) => {
+        btn.addEventListener('mouseenter', () => show(btn));
+        btn.addEventListener('focus', () => show(btn));
+        btn.addEventListener('mouseleave', hide);
+        btn.addEventListener('blur', hide);
+    });
+};
+
 $('load-latest')?.addEventListener('click', handleLoadLatest);
 $('open-history')?.addEventListener('click', handleOpenHistory);
 $('tab-load')?.addEventListener('click', (e) => {
@@ -124,6 +198,8 @@ $('tab-history')?.addEventListener('click', (e) => {
     e.stopPropagation();
     handleOpenHistory();
 });
+
+setupStatusTooltips();
 
 window._notelet = editorManager.buildPublicApi();
 

@@ -73,7 +73,8 @@ export class ThemeController {
             if (!btn) return;
             const icon = btn.querySelector('.icon');
             if (icon) icon.className = `icon ${iconClass}`;
-            btn.setAttribute('title', `切換主題（目前：${this.iconLabelMap[this.preference] || '自動'}）`);
+            // btn.setAttribute('title', `切換主題（目前：${this.iconLabelMap[this.preference] || '自動'}）`);
+            btn.dataset.tooltip = `切換主題（目前：${this.iconLabelMap[this.preference] || '自動'}）`;
         };
         updateBtn(this.themeToggle);
         updateBtn(this.tabThemeToggle);
