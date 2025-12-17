@@ -414,6 +414,8 @@ body {
     color: #b8bcc3;
     flex-wrap: nowrap;
     white-space: nowrap;
+    flex-shrink: 0;
+    min-width: max-content;
 }
 
 .status-action,
@@ -744,19 +746,22 @@ body {
     }
 
     #status {
-        flex-direction: column;
-        align-items: flex-start;
+        flex-direction: row;
+        align-items: center;
         height: auto;
         gap: 8px;
         padding: 8px calc(12px + var(--safe-right)) calc(10px + var(--safe-bottom)) calc(12px + var(--safe-left));
-        overflow-x: visible;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
     }
 
     #status-left {
-        width: 100%;
-        flex-wrap: wrap;
-        white-space: normal;
+        width: auto;
+        flex-wrap: nowrap;
+        white-space: nowrap;
         justify-content: flex-start;
+        min-width: max-content;
     }
 
     #editors {
