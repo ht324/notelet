@@ -709,6 +709,8 @@ export class EditorManager {
         this.activePaneId = null;
         this.paneTree = null; // { type: 'leaf' | 'split', id?, dir?, children? }
         this.paneDom = new Map();
+        this.desktopLayoutBackup = null;
+        this.isMobileCollapsed = false;
         this.wrapPreference = this.loadWrapPreference();
         this.selectionController = new SelectionMenuController({
             menuEl: this.selectionMenu,
@@ -739,8 +741,7 @@ export class EditorManager {
         this.formatCompactBtn?.addEventListener('click', () => this.handleFormat('compact'));
         this.wrapToggle?.addEventListener('click', () => this.toggleWrap());
         window.addEventListener('resize', () => {
-            this.updatePaneVisibility();
-            this.editors.forEach(ed => ed.refresh?.());
+            this.syncLayout(true);
         });
         const bbsHotkeyHandler = (e) => {
             const isMod = e.metaKey || e.ctrlKey;
@@ -798,6 +799,26 @@ export class EditorManager {
             const leaf = this.getFirstLeaf(this.paneTree);
             this.activePaneId = leaf?.id || null;
         }
+    }
+
+    cloneTree(node) {
+        return node ? JSON.parse(JSON.stringify(node)) : null;
+    }
+
+    collapseToMobilePane() {
+        const targetPane = this.ensurePaneElement(this.activePaneId || this.getFirstLeaf(this.paneTree)?.id || this.createPaneId());
+        // move all editors into target pane
+        this.editors.forEach(ed => this.moveEditorToPane(ed, targetPane));
+        // reset tree to single leaf
+        const paneId = targetPane.dataset.paneId || this.createPaneId();
+        targetPane.dataset.paneId = paneId;
+        this.paneTree = { type: 'leaf', id: paneId };
+        this.activePaneId = paneId;
+        // remove other cached panes
+        Array.from(this.paneDom.keys()).forEach(id => {
+            if (id !== paneId) this.paneDom.delete(id);
+        });
+        return targetPane;
     }
 
     normalizeTree(node) {
@@ -970,6 +991,55 @@ export class EditorManager {
         this.ensurePaneTabs(targetPane);
         this.refreshPinnedEditors();
         return removed;
+    }
+
+    mergeAllEditorsToPane(targetPane) {
+        if (!targetPane) return;
+        this.editors.forEach(ed => {
+            this.moveEditorToPane(ed, targetPane);
+        });
+    }
+
+    collapseToMobilePane() {
+        if (this.isMobileCollapsed) return this.ensurePaneElement(this.activePaneId);
+        // backup current layout
+        const editorPaneMap = {};
+        this.editors.forEach(ed => {
+            if (ed.__sessionId) editorPaneMap[ed.__sessionId] = ed.__pane?.dataset?.paneId;
+        });
+        this.desktopLayoutBackup = {
+            tree: this.cloneTree(this.paneTree),
+            activePaneId: this.activePaneId,
+            editorPaneMap
+        };
+
+        const targetPane = this.ensurePaneElement(this.activePaneId || this.getFirstLeaf(this.paneTree)?.id || this.createPaneId());
+        this.mergeAllEditorsToPane(targetPane);
+        const paneId = targetPane.dataset.paneId || this.createPaneId();
+        targetPane.dataset.paneId = paneId;
+        this.paneTree = { type: 'leaf', id: paneId };
+        this.activePaneId = paneId;
+        Array.from(this.paneDom.keys()).forEach(id => {
+            if (id !== paneId) this.paneDom.delete(id);
+        });
+        this.isMobileCollapsed = true;
+        return targetPane;
+    }
+
+    restoreFromMobileCollapse() {
+        if (!this.isMobileCollapsed || !this.desktopLayoutBackup) return;
+        const backup = this.desktopLayoutBackup;
+        const tree = this.normalizeTree(this.cloneTree(backup.tree));
+        if (tree) this.paneTree = tree;
+        this.activePaneId = backup.activePaneId || this.getFirstLeaf(this.paneTree)?.id || null;
+        // move editors back to their pane if known
+        this.editors.forEach(ed => {
+            const targetId = backup.editorPaneMap?.[ed.__sessionId];
+            const pane = this.ensurePaneElement(targetId || this.activePaneId || this.createPaneId());
+            this.moveEditorToPane(ed, pane);
+        });
+        this.isMobileCollapsed = false;
+        this.desktopLayoutBackup = null;
     }
 
     cleanupPane(pane) {
@@ -1271,6 +1341,24 @@ export class EditorManager {
         if (!this.container) return;
         this.container.innerHTML = '';
         this.ensureTree();
+        const mobile = isMobile();
+        if (mobile) {
+            const targetPane = this.collapseToMobilePane();
+            targetPane.style.flex = '1 1 auto';
+            targetPane.style.width = '100%';
+            targetPane.style.height = '100%';
+            this.container.appendChild(targetPane);
+            const editorsInPane = this.getPaneEditors(targetPane);
+            const activeInPane = this.activeEditor && editorsInPane.includes(this.activeEditor) ? this.activeEditor : editorsInPane[0];
+            editorsInPane.forEach(ed => {
+                const host = ed.__host;
+                if (host) host.classList.toggle('hidden', ed !== activeInPane);
+            });
+            this.renderTabs();
+            this.editors.forEach(ed => ed.refresh?.());
+            return;
+        }
+        this.restoreFromMobileCollapse();
         const renderNode = (node, parent) => {
             if (!node) return;
             if (node.type === 'leaf') {
