@@ -385,9 +385,10 @@ body {
 }
 
 #status-text {
-    white-space: nowrap;
+    white-space: pre-line;
     color: #b8bcc3;
-    padding: 0;
+    padding: 0 1em;
+    line-height: 1.25;
 }
 
 #status-left {

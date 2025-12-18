@@ -432,8 +432,9 @@ class CMEditorWrapper {
     }
 
     posToLineCh(pos = 0) {
-        const lineInfo = this.view.state.doc.line(Math.max(1, Math.min(this.view.state.doc.lines, Math.floor(pos) + 1)));
-        const ch = pos - lineInfo.from;
+        const clamped = Math.max(0, Math.min(this.view.state.doc.length, Math.floor(pos)));
+        const lineInfo = this.view.state.doc.lineAt(clamped);
+        const ch = clamped - lineInfo.from;
         return { line: lineInfo.number - 1, ch };
     }
 
@@ -1134,7 +1135,7 @@ export class EditorManager {
         const encoder = new TextEncoder();
         const bytes = encoder.encode(this.activeEditor.getValue()).length;
         if (this.statusText) {
-            this.statusText.textContent = `Ln ${line + 1}, Col ${ch + 1} | Chars ${totalChars} | Bytes ${bytes}`;
+            this.statusText.textContent = `Ln ${line + 1}, Col ${ch + 1}\nChars ${totalChars} | Bytes ${bytes}`;
         }
     }
 
