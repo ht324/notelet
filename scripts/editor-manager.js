@@ -1109,6 +1109,7 @@ export class EditorManager {
         this.currentMode = modeId;
         if (this.modeSelect && this.modeSelect.value !== modeId) {
             this.modeSelect.value = modeId;
+            this.modeSelect.dispatchEvent(new CustomEvent('notelet:mode-sync', { bubbles: true }));
         }
         const pane = editorInstance?.__pane;
         const needLayout = pane && this.container && !this.container.contains(pane);

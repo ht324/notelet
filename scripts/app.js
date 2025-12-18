@@ -152,9 +152,12 @@ const setupStatusTooltips = () => {
     let instance = null;
     let hideTimer = null;
     let activeTarget = null;
+    const suppressedUntil = new WeakMap();
 
     const show = (target) => {
         clearTimeout(hideTimer);
+        const until = suppressedUntil.get(target);
+        if (until && until > Date.now()) return;
         const label = target.dataset.tooltip || target.getAttribute('aria-label') || '';
         if (!label) return;
         activeTarget = target;
@@ -173,14 +176,20 @@ const setupStatusTooltips = () => {
 
     const hide = () => {
         hideTimer = setTimeout(() => {
-            tooltip.removeAttribute('data-show');
-            tooltip.setAttribute('aria-hidden', 'true');
-            activeTarget = null;
-            if (instance) {
-                instance.destroy();
-                instance = null;
-            }
+            hideImmediate();
         }, 60);
+    };
+
+    const hideImmediate = (target = null) => {
+        if (target && activeTarget !== target) return;
+        clearTimeout(hideTimer);
+        tooltip.removeAttribute('data-show');
+        tooltip.setAttribute('aria-hidden', 'true');
+        activeTarget = null;
+        if (instance) {
+            instance.destroy();
+            instance = null;
+        }
     };
 
     const refreshIfActive = (target) => {
@@ -191,6 +200,18 @@ const setupStatusTooltips = () => {
         content.textContent = label;
         instance?.update?.();
     };
+
+    document.addEventListener('notelet:tooltip-hide', (e) => {
+        const target = e?.detail?.target ?? null;
+        hideImmediate(target);
+    });
+
+    document.addEventListener('notelet:tooltip-suppress', (e) => {
+        const target = e?.detail?.target ?? null;
+        const ms = Number(e?.detail?.ms ?? 0);
+        if (!target || !(target instanceof Element) || !Number.isFinite(ms) || ms <= 0) return;
+        suppressedUntil.set(target, Date.now() + ms);
+    });
 
     buttons.forEach((btn) => {
         btn.addEventListener('mouseenter', () => show(btn));
@@ -213,6 +234,156 @@ $('tab-history')?.addEventListener('click', (e) => {
 });
 
 setupStatusTooltips();
+
+const setupModeDropdown = () => {
+    const select = $('mode-select');
+    const button = $('mode-select-btn');
+    if (!select || !button) return;
+
+    const iconEl = button.querySelector('.mode-select-icon');
+    const labelEl = button.querySelector('.mode-select-label');
+
+    const iconByValue = {
+        'text/plain': 'txt',
+        'application/json': '{ }',
+        javascript: 'JS',
+        css: 'CSS',
+        xml: '</>',
+        markdown: 'Md'
+    };
+
+    const menu = document.createElement('div');
+    menu.className = 'mode-menu';
+    menu.setAttribute('role', 'listbox');
+    menu.hidden = true;
+    document.body.appendChild(menu);
+
+    let popperInstance = null;
+
+    const getSelectedOption = () => Array.from(select.options).find(o => o.value === select.value) || select.options[0] || null;
+
+    const syncButton = () => {
+        const opt = getSelectedOption();
+        const text = opt ? (opt.textContent || opt.value) : 'Mode';
+        const iconText = opt ? (iconByValue[opt.value] || (text || '')) : '';
+        if (labelEl) labelEl.textContent = text;
+        if (iconEl) iconEl.textContent = iconText;
+    };
+
+    const rebuildMenu = () => {
+        menu.textContent = '';
+        Array.from(select.options).forEach((opt) => {
+            const item = document.createElement('button');
+            item.type = 'button';
+            item.className = 'mode-menu-item';
+            item.setAttribute('role', 'option');
+            item.dataset.value = opt.value;
+            item.setAttribute('aria-selected', opt.value === select.value ? 'true' : 'false');
+
+            const check = document.createElement('span');
+            check.className = 'mode-menu-check';
+            check.setAttribute('aria-hidden', 'true');
+
+            const icon = document.createElement('span');
+            icon.className = 'mode-select-icon';
+            icon.setAttribute('aria-hidden', 'true');
+            icon.textContent = iconByValue[opt.value] || '';
+
+            const name = document.createElement('span');
+            name.className = 'mode-menu-name';
+            name.textContent = opt.textContent || opt.value;
+
+            item.appendChild(check);
+            item.appendChild(icon);
+            item.appendChild(name);
+
+            item.addEventListener('click', () => {
+                if (select.value !== opt.value) {
+                    select.value = opt.value;
+                    select.dispatchEvent(new Event('change', { bubbles: true }));
+                }
+                document.dispatchEvent(new CustomEvent('notelet:tooltip-hide', { detail: { target: button } }));
+                document.dispatchEvent(new CustomEvent('notelet:tooltip-suppress', { detail: { target: button, ms: 500 } }));
+                closeMenu();
+                button.focus();
+            });
+
+            menu.appendChild(item);
+        });
+    };
+
+    const openMenu = () => {
+        rebuildMenu();
+        menu.hidden = false;
+        button.setAttribute('aria-expanded', 'true');
+        popperInstance?.destroy();
+        popperInstance = createPopper(button, menu, {
+            placement: 'bottom-start',
+            modifiers: [
+                { name: 'offset', options: { offset: [0, 6] } },
+                { name: 'preventOverflow', options: { padding: 8 } }
+            ]
+        });
+        popperInstance.update();
+        const selected = menu.querySelector('[aria-selected="true"]');
+        if (selected instanceof HTMLElement) selected.focus({ preventScroll: true });
+    };
+
+    const closeMenu = () => {
+        if (menu.hidden) return;
+        menu.hidden = true;
+        button.setAttribute('aria-expanded', 'false');
+        popperInstance?.destroy();
+        popperInstance = null;
+    };
+
+    const toggleMenu = () => {
+        if (menu.hidden) openMenu();
+        else closeMenu();
+    };
+
+    button.addEventListener('click', (e) => {
+        e.preventDefault();
+        toggleMenu();
+    });
+
+    button.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            openMenu();
+        }
+    });
+
+    document.addEventListener('mousedown', (e) => {
+        if (menu.hidden) return;
+        const target = e.target;
+        if (!(target instanceof Node)) return;
+        if (menu.contains(target) || button.contains(target)) return;
+        closeMenu();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (menu.hidden) return;
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            closeMenu();
+            button.focus();
+        }
+    });
+
+    select.addEventListener('change', () => {
+        syncButton();
+        if (!menu.hidden) rebuildMenu();
+    });
+    select.addEventListener('notelet:mode-sync', () => {
+        syncButton();
+        if (!menu.hidden) rebuildMenu();
+    });
+
+    syncButton();
+};
+
+setupModeDropdown();
 
 window._notelet = editorManager.buildPublicApi();
 
