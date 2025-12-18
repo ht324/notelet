@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,26 +19,26 @@
         </div>
     </div>
     <div id="status">
-            <div id="status-left">
-                <div id="status-text">Ln 1, Col 1</div>
-                <select id="mode-select" aria-label="Mode">
+        <div id="status-left">
+            <div id="status-text">Ln 1, Col 1</div>
+            <select id="mode-select" aria-label="Mode">
                 <option value="text/plain">text</option>
-                    <option value="application/json">json</option>
+                <option value="application/json">json</option>
                 <option value="javascript">javascript</option>
-                    <option value="css">css</option>
-                    <option value="xml">xml</option>
-                    <option value="markdown">markdown</option>
-                </select>
-                <button id="format-pretty" class="status-action status-tool-btn" aria-label="格式化" data-tooltip="格式化">
-                    <span class="icon icon-format" aria-hidden="true"></span>
-                </button>
-                <button id="format-compact" class="status-action status-tool-btn" aria-label="壓縮" data-tooltip="壓縮">
-                    <span class="icon icon-compact" aria-hidden="true"></span>
-                </button>
-                <button id="wrap-toggle" class="status-action status-tool-btn" aria-label="自動換行" data-tooltip="自動換行">
-                    <span class="icon icon-wrap-off" aria-hidden="true"></span>
-                </button>
-                <span class="status-divider" aria-hidden="true"></span>
+                <option value="css">css</option>
+                <option value="xml">xml</option>
+                <option value="markdown">markdown</option>
+            </select>
+            <button id="format-pretty" class="status-action status-tool-btn" aria-label="格式化" data-tooltip="格式化">
+                <span class="icon icon-format" aria-hidden="true"></span>
+            </button>
+            <button id="format-compact" class="status-action status-tool-btn" aria-label="壓縮" data-tooltip="壓縮">
+                <span class="icon icon-compact" aria-hidden="true"></span>
+            </button>
+            <button id="wrap-toggle" class="status-action status-tool-btn" aria-label="自動換行" data-tooltip="自動換行">
+                <span class="icon icon-wrap-off" aria-hidden="true"></span>
+            </button>
+            <span class="status-divider" aria-hidden="true"></span>
             <button id="load-latest" class="status-tool-btn" aria-label="載入最新" data-tooltip="載入最新">
                 <span class="icon icon-refresh" aria-hidden="true"></span>
             </button>
@@ -82,3 +83,5 @@
     </div>
     <script type="module" src="scripts/app.js"></script>
 </body>
+
+</html>
