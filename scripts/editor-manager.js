@@ -787,6 +787,9 @@ export class EditorManager {
         const useWrap = this.activeEditor.getOption('lineWrapping');
         const icon = this.wrapToggle.querySelector('.icon');
         if (icon) icon.className = `icon ${useWrap ? 'icon-wrap-on' : 'icon-wrap-off'}`;
+        const tooltipText = useWrap ? '取消換行' : '自動換行';
+        this.wrapToggle.dataset.tooltip = tooltipText;
+        this.wrapToggle.setAttribute('aria-label', tooltipText);
     }
 
     ensureTree() {

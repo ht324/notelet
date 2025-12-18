@@ -151,11 +151,13 @@ const setupStatusTooltips = () => {
 
     let instance = null;
     let hideTimer = null;
+    let activeTarget = null;
 
     const show = (target) => {
         clearTimeout(hideTimer);
         const label = target.dataset.tooltip || target.getAttribute('aria-label') || '';
         if (!label) return;
+        activeTarget = target;
         content.textContent = label;
         tooltip.setAttribute('data-show', '');
         tooltip.setAttribute('aria-hidden', 'false');
@@ -173,6 +175,7 @@ const setupStatusTooltips = () => {
         hideTimer = setTimeout(() => {
             tooltip.removeAttribute('data-show');
             tooltip.setAttribute('aria-hidden', 'true');
+            activeTarget = null;
             if (instance) {
                 instance.destroy();
                 instance = null;
@@ -180,11 +183,21 @@ const setupStatusTooltips = () => {
         }, 60);
     };
 
+    const refreshIfActive = (target) => {
+        if (activeTarget !== target) return;
+        if (!tooltip.hasAttribute('data-show')) return;
+        const label = target.dataset.tooltip || target.getAttribute('aria-label') || '';
+        if (!label) return;
+        content.textContent = label;
+        instance?.update?.();
+    };
+
     buttons.forEach((btn) => {
         btn.addEventListener('mouseenter', () => show(btn));
         btn.addEventListener('focus', () => show(btn));
         btn.addEventListener('mouseleave', hide);
         btn.addEventListener('blur', hide);
+        btn.addEventListener('click', () => refreshIfActive(btn));
     });
 };
 
