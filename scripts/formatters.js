@@ -1,17 +1,10 @@
 import { simplifyMode, isFormatSupported } from './utils/editor-utils.js';
 
-import * as jsonlintModule from '@prantlf/jsonlint';
 import * as beautifyModule from 'js-beautify';
 
 const pickFunction = (...candidates) => candidates.find((candidate) => typeof candidate === 'function');
 
 const globalWindow = typeof window === 'undefined' ? undefined : window;
-
-const jsonlintParse = pickFunction(
-    jsonlintModule?.parse,
-    jsonlintModule?.default?.parse,
-    jsonlintModule?.default
-);
 
 const jsBeautify = pickFunction(
     beautifyModule?.js_beautify,
@@ -26,7 +19,6 @@ const cssBeautify = pickFunction(
 );
 
 const parseJsonSafe = (val) => {
-    if (jsonlintParse) return jsonlintParse(val);
     if (globalWindow?.jsonlint && typeof jsonlint.parse === 'function') return jsonlint.parse(val);
     return JSON.parse(val);
 };
