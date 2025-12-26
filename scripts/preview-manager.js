@@ -155,6 +155,7 @@ export class PreviewManager {
         this.dragInfo = null;
         this.fullscreenPaneId = null;
         this.snapGuides = new Map();
+        this.zIndexCounter = 0;
         this.bind();
         this.observeTheme();
         window.addEventListener('resize', () => this.handleResize());
@@ -405,10 +406,12 @@ export class PreviewManager {
         this.clearDockClasses(state);
         const panel = state.panelEl;
         if (state.resizerEl?.parentNode) state.resizerEl.parentNode.removeChild(state.resizerEl);
-        if (panel.parentNode !== pane) pane.appendChild(panel);
+        const base = this.container;
+        if (panel.parentNode !== base) base.appendChild(panel);
         panel.classList.remove('preview-docked', 'preview-fullscreen');
         panel.classList.add('preview-floating');
-        this.applyFloatingPosition(pane, state);
+        this.raiseFloating(state);
+        this.applyFloatingPosition(base, state);
     }
 
     ensureResizer(state) {
@@ -435,15 +438,15 @@ export class PreviewManager {
         }
     }
 
-    applyFloatingPosition(pane, state) {
+    applyFloatingPosition(baseEl, state) {
         const rect = state.floatRect;
         rect.width = Math.max(rect.width, MIN_FLOAT_WIDTH);
         rect.height = Math.max(rect.height, MIN_FLOAT_HEIGHT);
-        const paneRect = pane.getBoundingClientRect();
+        const baseRect = baseEl.getBoundingClientRect();
         const minX = -(rect.width - FLOAT_BOUNDARY);
         const minY = -(rect.height - FLOAT_BOUNDARY);
-        const maxX = paneRect.width - FLOAT_BOUNDARY;
-        const maxY = paneRect.height - FLOAT_BOUNDARY;
+        const maxX = baseRect.width - FLOAT_BOUNDARY;
+        const maxY = baseRect.height - FLOAT_BOUNDARY;
         rect.x = clamp(rect.x, minX, maxX);
         rect.y = clamp(rect.y, minY, maxY);
         const panel = state.panelEl;
@@ -505,15 +508,16 @@ export class PreviewManager {
         };
         const panelRect = state.panelEl.getBoundingClientRect();
         const paneRect = pane.getBoundingClientRect();
-        const offsetX = panelRect.left - paneRect.left;
-        const offsetY = panelRect.top - paneRect.top;
+        const baseRect = this.container.getBoundingClientRect();
+        const offsetX = panelRect.left - baseRect.left;
+        const offsetY = panelRect.top - baseRect.top;
         const onMove = (e) => {
             const dx = e.clientX - start.x;
             const dy = e.clientY - start.y;
             if (start.state === 'docked' && Math.hypot(dx, dy) > DRAG_THRESHOLD) {
                 state.state = 'floating';
-                const targetWidth = paneRect.width * 0.45;
-                const targetHeight = paneRect.height * 0.45;
+                const targetWidth = baseRect.width * 0.45;
+                const targetHeight = baseRect.height * 0.45;
                 state.floatRect = {
                     width: Math.max(MIN_FLOAT_WIDTH, targetWidth),
                     height: Math.max(MIN_FLOAT_HEIGHT, targetHeight),
@@ -524,25 +528,27 @@ export class PreviewManager {
                 this.attachFloating(pane, state);
             }
             if (state.state === 'floating') {
+                const activePane = this.findPane(state) || pane;
                 state.lastPointer = { x: e.clientX, y: e.clientY };
                 state.floatRect.x = start.rect.x + dx;
                 state.floatRect.y = start.rect.y + dy;
-                this.applyFloatingPosition(pane, state);
-                this.updateSnapGuides(pane, state);
+                this.applyFloatingPosition(this.container, state);
+                this.updateSnapGuides(activePane, state);
             }
         };
         const onUp = (e) => {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
             document.body.style.userSelect = '';
-            this.hideSnapGuides(pane);
+            const activePane = this.findPane(state) || pane;
+            this.hideSnapGuides(activePane);
             state.lastPointer = null;
             if (state.state === 'floating' && !isMobile()) {
-                const side = this.getDockSideFromEvent(pane, e);
+                const side = this.getDockSideFromEvent(activePane, e);
                 if (side) {
                     state.state = 'docked';
                     state.dockSide = side;
-                    this.attachDocked(pane, state);
+                    this.attachDocked(activePane, state);
                 }
             }
         };
@@ -600,8 +606,7 @@ export class PreviewManager {
             state.floatRect.height = nextHeight;
             state.floatRect.x = nextX;
             state.floatRect.y = nextY;
-            const pane = this.findPane(state);
-            if (pane) this.applyFloatingPosition(pane, state);
+            if (this.container) this.applyFloatingPosition(this.container, state);
         };
         const onUp = () => {
             document.removeEventListener('mousemove', onMove);
@@ -614,7 +619,8 @@ export class PreviewManager {
     }
 
     getDockSideFromEvent(pane, event) {
-        const rect = pane.getBoundingClientRect();
+        const body = this.editorManager?.ensurePaneBody?.(pane) || pane;
+        const rect = body.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         if (x < -DOCK_THRESHOLD || x > rect.width + DOCK_THRESHOLD) return null;
@@ -625,6 +631,7 @@ export class PreviewManager {
         if (y > rect.height - DOCK_THRESHOLD) return 'bottom';
         return null;
     }
+
 
     toggleFullscreen(state) {
         if (state.state === 'fullscreen') {
@@ -641,6 +648,7 @@ export class PreviewManager {
         state.prevPaneId = state.paneId;
         state.panelEl.classList.remove('preview-docked', 'preview-floating');
         state.panelEl.classList.add('preview-fullscreen');
+        state.panelEl.style.zIndex = '80';
         if (state.panelEl.parentNode !== this.container) {
             this.container.appendChild(state.panelEl);
         }
@@ -657,6 +665,7 @@ export class PreviewManager {
         const next = state.prevState || 'docked';
         state.state = next;
         state.panelEl.classList.remove('preview-fullscreen');
+        state.panelEl.style.zIndex = '';
         if (pane) {
             if (next === 'floating') {
                 this.attachFloating(pane, state);
@@ -684,6 +693,12 @@ export class PreviewManager {
         });
     }
 
+    raiseFloating(state) {
+        if (!state?.panelEl) return;
+        this.zIndexCounter += 1;
+        state.panelEl.style.zIndex = String(40 + this.zIndexCounter);
+    }
+
     handleResize() {
         this.stateByPane.forEach((state) => {
             if (state.state === 'closed') return;
@@ -698,7 +713,7 @@ export class PreviewManager {
                     state.dockSide = this.defaultDockSide();
                     this.attachDocked(pane, state);
                 } else {
-                    this.applyFloatingPosition(pane, state);
+                    this.applyFloatingPosition(this.container, state);
                 }
             }
         });
@@ -707,6 +722,11 @@ export class PreviewManager {
 
     handleActiveEditorChange(editor) {
         if (!editor) return;
+        const pane = editor.__pane;
+        if (pane) {
+            const state = this.ensureState(pane);
+            if (state?.state === 'floating') this.raiseFloating(state);
+        }
         this.updateToggleButton();
         this.refreshAll();
     }
@@ -793,8 +813,8 @@ export class PreviewManager {
         panes.forEach((pane) => {
             const state = this.ensureState(pane);
             if (!state || state.state === 'closed') return;
-            if (state.state === 'floating' && state.panelEl?.parentNode !== pane) {
-                pane.appendChild(state.panelEl);
+            if (state.state === 'floating' && state.panelEl?.parentNode !== this.container) {
+                this.container.appendChild(state.panelEl);
             }
             this.renderForPane(pane, state);
         });
@@ -818,27 +838,35 @@ export class PreviewManager {
         if (!pane) return;
         const editor = this.editorManager?.getPrimaryEditorForPane?.(pane);
         if (editor) this.editorManager?.setActiveEditor?.(editor);
+        if (state?.state === 'floating') this.raiseFloating(state);
     }
 
     ensureSnapGuides(pane) {
         if (!pane) return null;
-        let guides = this.snapGuides.get(pane);
+        const body = this.editorManager?.ensurePaneBody?.(pane) || pane;
+        let guides = this.snapGuides.get(body);
         if (guides) return guides;
         const h = document.createElement('div');
         h.className = 'preview-snap-guide preview-snap-guide-h';
         const v = document.createElement('div');
         v.className = 'preview-snap-guide preview-snap-guide-v';
-        pane.appendChild(h);
-        pane.appendChild(v);
+        body.appendChild(h);
+        body.appendChild(v);
         guides = { h, v };
-        this.snapGuides.set(pane, guides);
+        this.snapGuides.set(body, guides);
         return guides;
     }
 
     updateSnapGuides(pane, state) {
         const guides = this.ensureSnapGuides(pane);
         if (!guides) return;
-        const paneRect = pane.getBoundingClientRect();
+        if (!pane) {
+            guides.v.style.display = 'none';
+            guides.h.style.display = 'none';
+            return;
+        }
+        const body = this.editorManager?.ensurePaneBody?.(pane) || pane;
+        const paneRect = body.getBoundingClientRect();
         const maxX = paneRect.width;
         const maxY = paneRect.height;
         const mouse = state.lastPointer;
@@ -847,12 +875,11 @@ export class PreviewManager {
             guides.h.style.display = 'none';
             return;
         }
-        const x = mouse.x - paneRect.left;
-        const y = mouse.y - paneRect.top;
-        const nearLeft = x >= -SNAP_GUIDE_THRESHOLD && x <= SNAP_GUIDE_THRESHOLD;
-        const nearRight = x >= maxX - SNAP_GUIDE_THRESHOLD && x <= maxX + SNAP_GUIDE_THRESHOLD;
-        const nearTop = y >= -SNAP_GUIDE_THRESHOLD && y <= SNAP_GUIDE_THRESHOLD;
-        const nearBottom = y >= maxY - SNAP_GUIDE_THRESHOLD && y <= maxY + SNAP_GUIDE_THRESHOLD;
+        const side = this.getDockSideFromEvent(pane, { clientX: mouse.x, clientY: mouse.y });
+        const nearLeft = side === 'left';
+        const nearRight = side === 'right';
+        const nearTop = side === 'top';
+        const nearBottom = side === 'bottom';
 
         const showV = nearLeft || nearRight;
         const showH = nearTop || nearBottom;
@@ -871,7 +898,9 @@ export class PreviewManager {
     }
 
     hideSnapGuides(pane) {
-        const guides = pane ? this.snapGuides.get(pane) : null;
+        if (!pane) return;
+        const body = this.editorManager?.ensurePaneBody?.(pane) || pane;
+        const guides = this.snapGuides.get(body);
         if (!guides) return;
         guides.h.style.display = 'none';
         guides.v.style.display = 'none';
