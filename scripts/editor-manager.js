@@ -678,7 +678,8 @@ export class EditorManager {
         askConfirm,
         sessionStore,
         setHistoryCount,
-        themeController
+        themeController,
+        previewManager
     }) {
         this.container = container;
         this.tabs = tabs;
@@ -696,6 +697,7 @@ export class EditorManager {
         this.sessionStore = sessionStore;
         this.setHistoryCount = setHistoryCount;
         this.themeController = themeController;
+        this.previewManager = previewManager;
 
         this.activeEditor = null;
         this.currentMode = modeSelect?.value || 'text/plain';
@@ -976,6 +978,22 @@ export class EditorManager {
         return el;
     }
 
+    ensurePaneBody(pane) {
+        if (!pane) return null;
+        let body = pane.querySelector('.pane-body');
+        if (!body) {
+            body = document.createElement('div');
+            body.className = 'pane-body';
+            const tabs = pane.querySelector('.pane-tabs');
+            if (tabs && tabs.nextSibling) {
+                pane.insertBefore(body, tabs.nextSibling);
+            } else {
+                pane.appendChild(body);
+            }
+        }
+        return body;
+    }
+
     getPrimaryEditorForPane(pane) {
         const editors = this.getPaneEditors(pane);
         return editors.find(ed => ed === this.activeEditor) || editors[0] || null;
@@ -988,7 +1006,8 @@ export class EditorManager {
         this.attachPaneChrome(targetPane);
         const host = editorInstance.__host;
         if (host) host.remove();
-        targetPane.appendChild(host);
+        const body = this.ensurePaneBody(targetPane);
+        if (body) body.appendChild(host);
         editorInstance.__pane = targetPane;
         editorInstance.__paneId = targetPane.dataset.paneId;
         const removed = this.cleanupPane(oldPane);
@@ -1069,9 +1088,10 @@ export class EditorManager {
         if (peers.length <= 1) return currentPane;
         const newPane = document.createElement('div');
         this.attachPaneChrome(newPane);
+        this.ensurePaneBody(newPane);
         const host = editorInstance.__host;
         host.remove();
-        newPane.appendChild(host);
+        this.ensurePaneBody(newPane)?.appendChild(host);
         editorInstance.__pane = newPane;
         const parent = this.container || currentPane.parentNode;
         if (parent) {
@@ -1126,6 +1146,7 @@ export class EditorManager {
         this.updateWrapToggleUI();
         if (this.formatPrettyBtn) this.formatPrettyBtn.style.display = isFormatSupported(modeId) ? 'inline-flex' : 'none';
         if (this.formatCompactBtn) this.formatCompactBtn.style.display = simplifyMode(modeId) === 'json' ? 'inline-flex' : 'none';
+        this.previewManager?.handleActiveEditorChange?.(editorInstance);
     }
 
     updateStatus() {
@@ -1368,6 +1389,7 @@ export class EditorManager {
             if (!node) return;
             if (node.type === 'leaf') {
                 const pane = this.ensurePaneElement(node.id);
+                this.ensurePaneBody(pane);
                 pane.style.flex = '1 1 0';
                 parent.appendChild(pane);
                 return pane;
@@ -1406,6 +1428,7 @@ export class EditorManager {
         this.updatePaneVisibility();
         this.renderTabs();
         this.editors.forEach(ed => ed.refresh?.());
+        this.previewManager?.refreshAll?.();
     }
 
     getDropDirection(event, element) {
@@ -1782,10 +1805,11 @@ export class EditorManager {
         this.ensureTree();
         const targetId = paneId || this.activePaneId || this.createPaneId();
         const pane = this.ensurePaneElement(targetId);
+        const body = this.ensurePaneBody(pane);
 
         const editorEl = document.createElement('div');
         editorEl.className = 'editor-host';
-        pane.appendChild(editorEl);
+        if (body) body.appendChild(editorEl);
 
         const editorInstance = new CMEditorWrapper({
             parent: editorEl,
@@ -1805,6 +1829,7 @@ export class EditorManager {
                 this.updateStatus();
                 if (ed === this.activeEditor) this.updateDocumentTitle();
                 this.updateTabTitle(ed);
+                this.previewManager?.handleEditorChange?.(ed);
                 this.persistPage();
             },
             onSelection: () => {
@@ -1963,6 +1988,7 @@ export class EditorManager {
             if (this.formatPrettyBtn) this.formatPrettyBtn.style.display = isFormatSupported(this.currentMode) ? 'inline-flex' : 'none';
             if (this.formatCompactBtn) this.formatCompactBtn.style.display = simplifyMode(this.currentMode) === 'json' ? 'inline-flex' : 'none';
         }
+        this.previewManager?.handleModeChange?.(this.activeEditor);
     }
 
     handleFormat(kind) {

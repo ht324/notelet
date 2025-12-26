@@ -4,6 +4,7 @@ import { ThemeController } from './theme.js';
 import { HistoryModal } from './history-modal.js';
 import { EditorManager } from './editor-manager.js';
 import { MAX_SESSIONS } from './constants.js';
+import { PreviewManager } from './preview-manager.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -13,13 +14,13 @@ const modalMessage = $('modal-message');
 const modalOk = $('modal-ok');
 const modalCancel = $('modal-cancel');
 
-const showToast = (msg) => {
+const showToast = (msg, duration = 4000) => {
     toast.textContent = msg;
     toast.style.display = 'block';
     clearTimeout(showToast._t);
     showToast._t = setTimeout(() => {
         toast.style.display = 'none';
-    }, 4000);
+    }, duration);
 };
 
 const askConfirm = (message) => new Promise((resolve) => {
@@ -56,6 +57,12 @@ const themeController = new ThemeController({
     tabThemeToggle: $('tab-theme-toggle')
 });
 
+const previewManager = new PreviewManager({
+    container: $('editors'),
+    toggleButton: $('toggle-preview'),
+    showToast
+});
+
 const editorManager = new EditorManager({
     container: $('editors'),
     tabs: $('tabs'),
@@ -75,8 +82,10 @@ const editorManager = new EditorManager({
         historyModal.setCount(count);
         setHistoryTooltip(count);
     },
-    themeController
+    themeController,
+    previewManager
 });
+previewManager.setEditorManager(editorManager);
 
 const setHistoryTooltip = (count = 0) => {
     const text = `歷史紀錄 (${count}/${MAX_SESSIONS})`;
